@@ -5,7 +5,7 @@ import {User} from '../database/entities';
 import {ArticlesService} from './articles.service';
 import {CreateArticleRequest} from './dto/create-article.dto';
 import {UpdateArticleRequest} from './dto/update-article.dto';
-import {ListArticlesDto} from './dto/list-articles.dto';
+import {ListArticlesDto, PaginationDto} from './dto/list-articles.dto';
 
 @ApiTags('articles')
 @Controller('articles')
@@ -23,6 +23,13 @@ export class ArticlesController {
   @UseGuards(OptionalAuthGuard)
   list(@Query() query: ListArticlesDto, @CurrentUser() user?: User) {
     return this.articles.list(query, user?.id);
+  }
+
+  @Get('feed')
+  @UseGuards(AuthGuard)
+  @ApiSecurity('token')
+  feed(@Query() query: PaginationDto, @CurrentUser() user: User) {
+    return this.articles.feed(query, user.id);
   }
 
   @Get(':slug')

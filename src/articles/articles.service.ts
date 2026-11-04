@@ -2,11 +2,11 @@ import {ForbiddenException, Injectable, NotFoundException} from '@nestjs/common'
 import {InjectRepository} from '@nestjs/typeorm';
 import {randomUUID} from 'node:crypto';
 import {Repository} from 'typeorm';
-import {Article, Favorite, User} from '../database/entities';
+import {Article, Favorite, Follow, User} from '../database/entities';
 import {ArticlesPresenter} from './articles.presenter';
 import {CreateArticleDto} from './dto/create-article.dto';
 import {UpdateArticleDto} from './dto/update-article.dto';
-import {ListArticlesDto} from './dto/list-articles.dto';
+import {ListArticlesDto, PaginationDto} from './dto/list-articles.dto';
 
 @Injectable()
 export class ArticlesService {
@@ -63,6 +63,20 @@ export class ArticlesService {
       }, {favorited: input.favorited});
     }
     const [articles, articlesCount] = await query
+      .orderBy('article.createdAt', 'DESC').addOrderBy('article.id', 'DESC')
+      .take(input.limit).skip(input.offset).getManyAndCount();
+    return {articles: await this.presenter.presentList(articles, viewerId), articlesCount};
+  }
+
+  async feed(input: PaginationDto, viewerId: number) {
+    const [articles, articlesCount] = await this.articles.createQueryBuilder('article')
+      .innerJoinAndSelect('article.author', 'author')
+      .where(qb => {
+        const followed = qb.subQuery().select('1').from(Follow, 'follow')
+          .where('follow.followingId = article.authorId')
+          .andWhere('follow.followerId = :viewerId').getQuery();
+        return `EXISTS ${followed}`;
+      }, {viewerId})
       .orderBy('article.createdAt', 'DESC').addOrderBy('article.id', 'DESC')
       .take(input.limit).skip(input.offset).getManyAndCount();
     return {articles: await this.presenter.presentList(articles, viewerId), articlesCount};
