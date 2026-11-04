@@ -2,10 +2,11 @@ import {ForbiddenException, Injectable, NotFoundException} from '@nestjs/common'
 import {InjectRepository} from '@nestjs/typeorm';
 import {randomUUID} from 'node:crypto';
 import {Repository} from 'typeorm';
-import {Article, User} from '../database/entities';
+import {Article, Favorite, User} from '../database/entities';
 import {ArticlesPresenter} from './articles.presenter';
 import {CreateArticleDto} from './dto/create-article.dto';
 import {UpdateArticleDto} from './dto/update-article.dto';
+import {ListArticlesDto} from './dto/list-articles.dto';
 
 @Injectable()
 export class ArticlesService {
@@ -41,6 +42,30 @@ export class ArticlesService {
     const article = await this.findBySlug(slug);
     this.assertAuthor(article, userId);
     await this.articles.delete(article.id);
+  }
+
+  async list(input: ListArticlesDto, viewerId?: number) {
+    const query = this.articles.createQueryBuilder('article')
+      .innerJoinAndSelect('article.author', 'author');
+    if (input.tag !== undefined) {
+      query.andWhere('article.tagList @> ARRAY[:tag]::text[]', {tag: input.tag});
+    }
+    if (input.author !== undefined) {
+      query.andWhere('author.username = :author', {author: input.author});
+    }
+    if (input.favorited !== undefined) {
+      query.andWhere(qb => {
+        const subquery = qb.subQuery().select('1').from(Favorite, 'favorite')
+          .innerJoin(User, 'fan', 'fan.id = favorite.userId')
+          .where('favorite.articleId = article.id')
+          .andWhere('fan.username = :favorited').getQuery();
+        return `EXISTS ${subquery}`;
+      }, {favorited: input.favorited});
+    }
+    const [articles, articlesCount] = await query
+      .orderBy('article.createdAt', 'DESC').addOrderBy('article.id', 'DESC')
+      .take(input.limit).skip(input.offset).getManyAndCount();
+    return {articles: await this.presenter.presentList(articles, viewerId), articlesCount};
   }
 
   private assertAuthor(article: Article, userId: number): void {
