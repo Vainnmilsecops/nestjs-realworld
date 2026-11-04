@@ -60,4 +60,11 @@ export class ArticlesController {
   favorite(@Param('slug') slug: string, @CurrentUser() user: User) {
     return this.articles.favorite(slug, user.id);
   }
+
+  @Delete(':slug/favorite')
+  @UseGuards(AuthGuard)
+  @ApiSecurity('token')
+  unfavorite(@Param('slug') slug: string, @CurrentUser() user: User) {
+    return this.articles.unfavorite(slug, user.id);
+  }
 }
