@@ -4,7 +4,7 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 import {User} from '../database/entities';
 import {hashPassword, verifyPassword} from './password';
-import {LoginUserDto, RegisterUserDto} from './users.dto';
+import {LoginUserDto, RegisterUserDto, UpdateUserDto} from './users.dto';
 
 @Injectable()
 export class UsersService {
@@ -43,5 +43,14 @@ export class UsersService {
       throw new UnauthorizedException('Invalid email or password');
     }
     return this.present(user);
+  }
+
+  async update(user: User, input: UpdateUserDto) {
+    if (input.username !== undefined) user.username = input.username;
+    if (input.email !== undefined) user.email = input.email;
+    if (input.bio !== undefined) user.bio = input.bio;
+    if (input.image !== undefined) user.image = input.image;
+    if (input.password !== undefined) user.passwordHash = await hashPassword(input.password);
+    return this.present(await this.users.save(user));
   }
 }
