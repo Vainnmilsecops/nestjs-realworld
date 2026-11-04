@@ -1,6 +1,6 @@
-import {Body, Controller, Post} from '@nestjs/common';
+import {Body, Controller, HttpCode, Post} from '@nestjs/common';
 import {ApiTags} from '@nestjs/swagger';
-import {RegisterUserBody} from './users.dto';
+import {LoginUserBody, RegisterUserBody} from './users.dto';
 import {UsersService} from './users.service';
 
 @ApiTags('users')
@@ -11,5 +11,11 @@ export class UsersController {
   @Post('users')
   register(@Body() body: RegisterUserBody) {
     return this.users.register(body.user);
+  }
+
+  @Post('users/login')
+  @HttpCode(200)
+  login(@Body() body: LoginUserBody) {
+    return this.users.login(body.user);
   }
 }
