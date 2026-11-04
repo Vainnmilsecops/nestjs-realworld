@@ -1,10 +1,10 @@
-import {Injectable} from '@nestjs/common';
+import {Injectable, UnauthorizedException} from '@nestjs/common';
 import {JwtService} from '@nestjs/jwt';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 import {User} from '../database/entities';
-import {hashPassword} from './password';
-import {RegisterUserDto} from './users.dto';
+import {hashPassword, verifyPassword} from './password';
+import {LoginUserDto, RegisterUserDto} from './users.dto';
 
 @Injectable()
 export class UsersService {
@@ -32,5 +32,16 @@ export class UsersService {
       bio: user.bio,
       image: user.image,
     }};
+  }
+
+  async login(input: LoginUserDto) {
+    const user = await this.users.createQueryBuilder('user')
+      .addSelect('user.passwordHash')
+      .where('user.email = :email', {email: input.email})
+      .getOne();
+    if (!user || !await verifyPassword(input.password, user.passwordHash)) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+    return this.present(user);
   }
 }

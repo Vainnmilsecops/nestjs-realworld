@@ -24,3 +24,21 @@ export class RegisterUserBody {
   @Type(() => RegisterUserDto)
   user!: RegisterUserDto;
 }
+
+export class LoginUserDto {
+  @Transform(({value}: {value: unknown}) => typeof value === 'string' ? value.trim().toLowerCase() : value)
+  @IsEmail()
+  @Length(3, 254)
+  email!: string;
+
+  @IsString()
+  @Length(1, 128)
+  password!: string;
+}
+
+export class LoginUserBody {
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => LoginUserDto)
+  user!: LoginUserDto;
+}
