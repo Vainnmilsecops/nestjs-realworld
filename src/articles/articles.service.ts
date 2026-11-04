@@ -37,6 +37,12 @@ export class ArticlesService {
     return {article: await this.presenter.present(article, userId)};
   }
 
+  async delete(slug: string, userId: number): Promise<void> {
+    const article = await this.findBySlug(slug);
+    this.assertAuthor(article, userId);
+    await this.articles.delete(article.id);
+  }
+
   private assertAuthor(article: Article, userId: number): void {
     if (article.authorId !== userId) throw new ForbiddenException('Only the author can modify this article');
   }

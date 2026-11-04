@@ -1,4 +1,4 @@
-import {Body, Controller, Get, Param, Post, Put, UseGuards} from '@nestjs/common';
+import {Body, Controller, Delete, Get, HttpCode, Param, Post, Put, UseGuards} from '@nestjs/common';
 import {ApiSecurity, ApiTags} from '@nestjs/swagger';
 import {AuthGuard, CurrentUser, OptionalAuthGuard} from '../common/auth';
 import {User} from '../database/entities';
@@ -29,5 +29,13 @@ export class ArticlesController {
   @ApiSecurity('token')
   update(@Param('slug') slug: string, @Body() request: UpdateArticleRequest, @CurrentUser() user: User) {
     return this.articles.update(slug, request.article, user.id);
+  }
+
+  @Delete(':slug')
+  @HttpCode(204)
+  @UseGuards(AuthGuard)
+  @ApiSecurity('token')
+  delete(@Param('slug') slug: string, @CurrentUser() user: User) {
+    return this.articles.delete(slug, user.id);
   }
 }
