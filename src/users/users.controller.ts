@@ -1,5 +1,7 @@
-import {Body, Controller, HttpCode, Post} from '@nestjs/common';
-import {ApiTags} from '@nestjs/swagger';
+import {Body, Controller, Get, HttpCode, Post, UseGuards} from '@nestjs/common';
+import {ApiSecurity, ApiTags} from '@nestjs/swagger';
+import {AuthGuard, CurrentUser} from '../common/auth';
+import {User} from '../database/entities';
 import {LoginUserBody, RegisterUserBody} from './users.dto';
 import {UsersService} from './users.service';
 
@@ -17,5 +19,12 @@ export class UsersController {
   @HttpCode(200)
   login(@Body() body: LoginUserBody) {
     return this.users.login(body.user);
+  }
+
+  @Get('user')
+  @UseGuards(AuthGuard)
+  @ApiSecurity('token')
+  current(@CurrentUser() user: User) {
+    return this.users.present(user);
   }
 }
