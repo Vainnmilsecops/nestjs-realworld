@@ -34,7 +34,9 @@ export class ArticlesService {
     if (input.title !== undefined && input.title !== article.title) {
       article.slug = this.slugFor(input.title);
     }
-    Object.assign(article, input);
+    if (input.title !== undefined) article.title = input.title;
+    if (input.description !== undefined) article.description = input.description;
+    if (input.body !== undefined) article.body = input.body;
     await this.articles.save(article);
     return {article: await this.presenter.present(article, userId)};
   }
@@ -116,6 +118,6 @@ export class ArticlesService {
   private slugFor(title: string): string {
     const prefix = title.trim().toLowerCase().normalize('NFKC')
       .replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'article';
-    return `${prefix}-${randomUUID()}`;
+    return `${Array.from(prefix).slice(0, 200).join('')}-${randomUUID()}`;
   }
 }
