@@ -1,8 +1,19 @@
-import {Body, Controller, Get, Param, Post, UseGuards} from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {AuthGuard, CurrentUser, OptionalAuthGuard} from '../common/auth';
 import {User} from '../database/entities';
 import {CommentsService, CommentView} from './comments.service';
 import {CreateCommentRequestDto} from './create-comment.dto';
+import {DeleteCommentParamsDto} from './delete-comment-params.dto';
 
 @Controller('articles/:slug/comments')
 export class CommentsController {
@@ -25,5 +36,15 @@ export class CommentsController {
     @CurrentUser() user: User,
   ): Promise<{comment: CommentView}> {
     return this.comments.create(slug, request.comment, user);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(AuthGuard)
+  remove(
+    @Param() params: DeleteCommentParamsDto,
+    @CurrentUser() user: User,
+  ): Promise<void> {
+    return this.comments.remove(params.slug, params.id, user.id);
   }
 }

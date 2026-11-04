@@ -1,4 +1,8 @@
-import {Injectable, NotFoundException} from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 import {ProfilePresenter, ProfileView} from '../common/profile.presenter';
@@ -55,6 +59,16 @@ export class CommentsService {
         comments.map((comment) => this.present(comment, viewerId)),
       ),
     };
+  }
+
+  async remove(slug: string, id: number, userId: number): Promise<void> {
+    const article = await this.findArticle(slug);
+    const comment = await this.comments.findOneBy({id, articleId: article.id});
+    if (!comment) throw new NotFoundException('Comment not found');
+    if (comment.authorId !== userId) {
+      throw new ForbiddenException('Only the comment author can delete it');
+    }
+    await this.comments.delete({id, articleId: article.id, authorId: userId});
   }
 
   private async findArticle(slug: string): Promise<Article> {
