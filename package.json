@@ -1,0 +1,51 @@
+{
+  "name": "nestjs-realworld",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NestJS RealWorld backend following the Sun* training guideline",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "start:dev": "tsx watch src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "format": "prettier --write src test",
+    "sunlint": "sunlint --all --input=src --output-summary=reports/sunlint.json",
+    "test": "tsx --test --test-concurrency=1 test/*.test.ts",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/typeorm": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "dotenv": "^17.0.0",
+    "helmet": "^8.0.0",
+    "pg": "^8.16.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "typeorm": "~0.3.31"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.0",
+    "@sun-asterisk/sunlint": "1.3.56",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/supertest": "^6.0.0",
+    "eslint": "^9.0.0",
+    "typescript-eslint": "^8.0.0",
+    "prettier": "^3.0.0",
+    "supertest": "^7.0.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.0"
+  }
+}
