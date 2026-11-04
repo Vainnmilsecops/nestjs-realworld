@@ -96,6 +96,13 @@ export class ArticlesService {
     return {article: await this.presenter.present(article, userId)};
   }
 
+  async tags(): Promise<{tags: string[]}> {
+    const rows = await this.articles.createQueryBuilder('article')
+      .select('DISTINCT unnest(article.tagList)', 'tag')
+      .orderBy('tag', 'ASC').getRawMany<{tag: string}>();
+    return {tags: rows.map(row => row.tag)};
+  }
+
   private assertAuthor(article: Article, userId: number): void {
     if (article.authorId !== userId) throw new ForbiddenException('Only the author can modify this article');
   }
