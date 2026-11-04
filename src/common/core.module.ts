@@ -2,6 +2,8 @@ import {Global, Module} from '@nestjs/common';
 import {ConfigModule, ConfigService} from '@nestjs/config';
 import {JwtModule} from '@nestjs/jwt';
 import {TypeOrmModule} from '@nestjs/typeorm';
+import {APP_GUARD} from '@nestjs/core';
+import {ThrottlerGuard, ThrottlerModule} from '@nestjs/throttler';
 import {entities} from '../database/entities';
 import {databaseOptions} from '../database/data-source';
 import {AuthGuard, OptionalAuthGuard} from './auth';
@@ -10,6 +12,7 @@ import {ProfilePresenter} from './profile.presenter';
 @Global()
 @Module({
   imports: [
+    ThrottlerModule.forRoot([{ttl: 60000, limit: 100}]),
     ConfigModule.forRoot({
       isGlobal: true,
       validate: (config: Record<string, unknown>) => {
@@ -38,7 +41,8 @@ import {ProfilePresenter} from './profile.presenter';
       }),
     }),
   ],
-  providers: [AuthGuard, OptionalAuthGuard, ProfilePresenter],
+  providers: [AuthGuard, OptionalAuthGuard, ProfilePresenter,
+    {provide: APP_GUARD, useClass: ThrottlerGuard}],
   exports: [TypeOrmModule, JwtModule, AuthGuard, OptionalAuthGuard, ProfilePresenter],
 })
 export class CoreModule {}

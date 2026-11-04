@@ -1,5 +1,6 @@
 import {Body, Controller, Get, HttpCode, Post, Put, UseGuards} from '@nestjs/common';
 import {ApiSecurity, ApiTags} from '@nestjs/swagger';
+import {Throttle} from '@nestjs/throttler';
 import {AuthGuard, CurrentUser} from '../common/auth';
 import {User} from '../database/entities';
 import {LoginUserBody, RegisterUserBody, UpdateUserBody} from './users.dto';
@@ -11,11 +12,13 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Post('users')
+  @Throttle({default: {limit: 10, ttl: 60000}})
   register(@Body() body: RegisterUserBody) {
     return this.users.register(body.user);
   }
 
   @Post('users/login')
+  @Throttle({default: {limit: 10, ttl: 60000}})
   @HttpCode(200)
   login(@Body() body: LoginUserBody) {
     return this.users.login(body.user);
