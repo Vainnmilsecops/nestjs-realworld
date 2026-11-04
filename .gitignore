@@ -7,3 +7,4 @@ coverage/
 reports/
 *.log
 .local/
+.sunlint-eslint.config.js
