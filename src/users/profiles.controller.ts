@@ -1,4 +1,4 @@
-import {Controller, Get, HttpCode, Param, Post, UseGuards} from '@nestjs/common';
+import {Controller, Delete, Get, HttpCode, Param, Post, UseGuards} from '@nestjs/common';
 import {ApiSecurity, ApiTags} from '@nestjs/swagger';
 import {AuthGuard, CurrentUser, OptionalAuthGuard} from '../common/auth';
 import {User} from '../database/entities';
@@ -21,5 +21,12 @@ export class ProfilesController {
   @ApiSecurity('token')
   follow(@Param('username') username: string, @CurrentUser() viewer: User) {
     return this.profiles.follow(username, viewer.id);
+  }
+
+  @Delete(':username/follow')
+  @UseGuards(AuthGuard)
+  @ApiSecurity('token')
+  unfollow(@Param('username') username: string, @CurrentUser() viewer: User) {
+    return this.profiles.unfollow(username, viewer.id);
   }
 }

@@ -1,5 +1,5 @@
 import {Transform, Type} from 'class-transformer';
-import {IsDefined, IsEmail, IsString, IsUrl, Length, Matches, MaxLength, ValidateIf, ValidateNested} from 'class-validator';
+import {IsDefined, IsEmail, IsObject, IsString, IsUrl, Length, Matches, MaxLength, ValidateIf, ValidateNested} from 'class-validator';
 
 export class RegisterUserDto {
   @Transform(({value}: {value: unknown}) => typeof value === 'string' ? value.trim() : value)
@@ -20,6 +20,7 @@ export class RegisterUserDto {
 
 export class RegisterUserBody {
   @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => RegisterUserDto)
   user!: RegisterUserDto;
@@ -38,6 +39,7 @@ export class LoginUserDto {
 
 export class LoginUserBody {
   @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => LoginUserDto)
   user!: LoginUserDto;
@@ -75,6 +77,7 @@ export class UpdateUserDto {
 
 export class UpdateUserBody {
   @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => UpdateUserDto)
   user!: UpdateUserDto;

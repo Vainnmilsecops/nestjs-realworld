@@ -31,4 +31,10 @@ export class ProfilesService {
       .values({followerId: viewerId, followingId: user.id}).orIgnore().execute();
     return {profile: await this.profiles.present(user, viewerId)};
   }
+
+  async unfollow(username: string, viewerId: number) {
+    const user = await this.findUser(username);
+    await this.follows.delete({followerId: viewerId, followingId: user.id});
+    return {profile: await this.profiles.present(user, viewerId)};
+  }
 }
