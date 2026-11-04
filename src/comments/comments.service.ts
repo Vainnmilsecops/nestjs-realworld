@@ -40,6 +40,23 @@ export class CommentsService {
     return {comment: await this.present(comment, user.id)};
   }
 
+  async list(
+    slug: string,
+    viewerId?: number,
+  ): Promise<{comments: CommentView[]}> {
+    const article = await this.findArticle(slug);
+    const comments = await this.comments.find({
+      where: {articleId: article.id},
+      relations: {author: true},
+      order: {createdAt: 'ASC', id: 'ASC'},
+    });
+    return {
+      comments: await Promise.all(
+        comments.map((comment) => this.present(comment, viewerId)),
+      ),
+    };
+  }
+
   private async findArticle(slug: string): Promise<Article> {
     const article = await this.articles.findOneBy({slug});
     if (!article) throw new NotFoundException('Article not found');
