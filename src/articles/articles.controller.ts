@@ -1,10 +1,11 @@
-import {Body, Controller, Delete, Get, HttpCode, Param, Post, Put, UseGuards} from '@nestjs/common';
+import {Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, UseGuards} from '@nestjs/common';
 import {ApiSecurity, ApiTags} from '@nestjs/swagger';
 import {AuthGuard, CurrentUser, OptionalAuthGuard} from '../common/auth';
 import {User} from '../database/entities';
 import {ArticlesService} from './articles.service';
 import {CreateArticleRequest} from './dto/create-article.dto';
 import {UpdateArticleRequest} from './dto/update-article.dto';
+import {ListArticlesDto} from './dto/list-articles.dto';
 
 @ApiTags('articles')
 @Controller('articles')
@@ -16,6 +17,12 @@ export class ArticlesController {
   @ApiSecurity('token')
   create(@Body() request: CreateArticleRequest, @CurrentUser() user: User) {
     return this.articles.create(request.article, user);
+  }
+
+  @Get()
+  @UseGuards(OptionalAuthGuard)
+  list(@Query() query: ListArticlesDto, @CurrentUser() user?: User) {
+    return this.articles.list(query, user?.id);
   }
 
   @Get(':slug')
