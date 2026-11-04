@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
     "format": "prettier --write src test",
-    "sunlint": "sunlint --all --input=src --output-summary=reports/sunlint.json",
+    "sunlint": "node -r ./scripts/sunlint-compat.cjs ./node_modules/@sun-asterisk/sunlint/cli.js --all --input=src --languages typescript --no-ai --output-summary=reports/sunlint.json --output-html=reports/sunlint.html",
     "test": "node --test --test-concurrency=1 -r ts-node/register test/*.test.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts"
@@ -45,7 +45,10 @@
     "prettier": "^3.0.0",
     "supertest": "^7.0.0",
     "ts-node": "^10.9.2",
-    "tsx": "^4.20.0",
     "typescript": "~5.9.0"
+  },
+  "overrides": {
+    "multer": "^2.5.0",
+    "typeorm": {"glob": "^14.0.3"}
   }
 }
