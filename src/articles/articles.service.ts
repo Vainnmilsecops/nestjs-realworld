@@ -90,6 +90,12 @@ export class ArticlesService {
     return {article: await this.presenter.present(article, userId)};
   }
 
+  async unfavorite(slug: string, userId: number) {
+    const article = await this.findBySlug(slug);
+    await this.favorites.delete({articleId: article.id, userId});
+    return {article: await this.presenter.present(article, userId)};
+  }
+
   private assertAuthor(article: Article, userId: number): void {
     if (article.authorId !== userId) throw new ForbiddenException('Only the author can modify this article');
   }
