@@ -52,4 +52,12 @@ export class ArticlesController {
   delete(@Param('slug') slug: string, @CurrentUser() user: User) {
     return this.articles.delete(slug, user.id);
   }
+
+  @Post(':slug/favorite')
+  @HttpCode(200)
+  @UseGuards(AuthGuard)
+  @ApiSecurity('token')
+  favorite(@Param('slug') slug: string, @CurrentUser() user: User) {
+    return this.articles.favorite(slug, user.id);
+  }
 }

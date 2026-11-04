@@ -12,6 +12,7 @@ import {ListArticlesDto, PaginationDto} from './dto/list-articles.dto';
 export class ArticlesService {
   constructor(
     @InjectRepository(Article) private readonly articles: Repository<Article>,
+    @InjectRepository(Favorite) private readonly favorites: Repository<Favorite>,
     private readonly presenter: ArticlesPresenter,
   ) {}
 
@@ -80,6 +81,13 @@ export class ArticlesService {
       .orderBy('article.createdAt', 'DESC').addOrderBy('article.id', 'DESC')
       .take(input.limit).skip(input.offset).getManyAndCount();
     return {articles: await this.presenter.presentList(articles, viewerId), articlesCount};
+  }
+
+  async favorite(slug: string, userId: number) {
+    const article = await this.findBySlug(slug);
+    await this.favorites.createQueryBuilder().insert()
+      .values({articleId: article.id, userId}).orIgnore().execute();
+    return {article: await this.presenter.present(article, userId)};
   }
 
   private assertAuthor(article: Article, userId: number): void {
