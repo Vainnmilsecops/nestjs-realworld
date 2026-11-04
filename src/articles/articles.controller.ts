@@ -1,6 +1,6 @@
-import {Body, Controller, Post, UseGuards} from '@nestjs/common';
+import {Body, Controller, Get, Param, Post, UseGuards} from '@nestjs/common';
 import {ApiSecurity, ApiTags} from '@nestjs/swagger';
-import {AuthGuard, CurrentUser} from '../common/auth';
+import {AuthGuard, CurrentUser, OptionalAuthGuard} from '../common/auth';
 import {User} from '../database/entities';
 import {ArticlesService} from './articles.service';
 import {CreateArticleRequest} from './dto/create-article.dto';
@@ -15,5 +15,11 @@ export class ArticlesController {
   @ApiSecurity('token')
   create(@Body() request: CreateArticleRequest, @CurrentUser() user: User) {
     return this.articles.create(request.article, user);
+  }
+
+  @Get(':slug')
+  @UseGuards(OptionalAuthGuard)
+  get(@Param('slug') slug: string, @CurrentUser() user?: User) {
+    return this.articles.get(slug, user?.id);
   }
 }
