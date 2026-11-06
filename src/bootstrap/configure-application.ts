@@ -2,6 +2,8 @@ import {INestApplication, ValidationPipe} from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
 import {DocumentBuilder, SwaggerModule} from '@nestjs/swagger';
 import helmet from 'helmet';
+import {NextFunction, Request, Response} from 'express';
+import {ApiExceptionFilter} from '../common/api-exception.filter';
 
 export function configureApplication(app: INestApplication): void {
   const config = app.get(ConfigService);
@@ -14,6 +16,15 @@ export function configureApplication(app: INestApplication): void {
     }),
   );
   app.enableCors({origin: config.getOrThrow<string[]>('CORS_ORIGINS')});
+  app.use((_request: Request, response: Response, next: NextFunction) => {
+    response.set({
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
+    next();
+  });
+  app.useGlobalFilters(new ApiExceptionFilter());
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
@@ -25,9 +36,18 @@ export function configureApplication(app: INestApplication): void {
   const options = new DocumentBuilder()
     .setTitle('RealWorld Training API')
     .setDescription(
-      'Pull 1: NestJS bootstrap, hello endpoint and internationalization.',
+      'Pull 2: PostgreSQL migrations and JWT authentication with Redis logout revocation.',
     )
-    .setVersion('0.1.0')
+    .setVersion('0.2.0')
+    .addApiKey(
+      {
+        type: 'apiKey',
+        in: 'header',
+        name: 'Authorization',
+        description: 'Token <jwt> or Bearer <jwt>',
+      },
+      'token',
+    )
     .build();
   SwaggerModule.setup(
     'api/docs',
