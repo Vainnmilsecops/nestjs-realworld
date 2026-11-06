@@ -5,6 +5,8 @@ import {join} from 'node:path';
 import {validateEnvironment} from './config/environment';
 import {HelloModule} from './hello/hello.module';
 import {PreferredLanguageResolver} from './i18n/preferred-language.resolver';
+import {DatabaseModule} from './database/database.module';
+import {AuthModule} from './auth/auth.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import {PreferredLanguageResolver} from './i18n/preferred-language.resolver';
       ],
     }),
     HelloModule,
+    DatabaseModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

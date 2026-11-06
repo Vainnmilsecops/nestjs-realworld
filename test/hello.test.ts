@@ -4,11 +4,13 @@ import {after, before, describe, it} from 'node:test';
 import {INestApplication} from '@nestjs/common';
 import {Test} from '@nestjs/testing';
 import request from 'supertest';
+import {configureTestServices} from './support/services';
 
 describe('Hello API', () => {
   let app: INestApplication;
 
   before(async () => {
+    configureTestServices();
     const {AppModule} = await import('../src/app.module');
     const {configureApplication} =
       await import('../src/bootstrap/configure-application');

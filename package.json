@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "NestJS training, delivered in six reviewable pull requests",
-  "engines": {"node": ">=22"},
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "nest build",
     "start:dev": "nest start --watch",
@@ -13,20 +15,33 @@
     "format": "prettier --write src test",
     "test": "node --test --test-concurrency=1 -r ts-node/register test/*.test.ts",
     "test:build": "node scripts/smoke-build.cjs",
+    "setup": "node scripts/setup-env.cjs",
+    "migration:add": "ts-node scripts/migrations.ts add",
+    "migration:run": "ts-node scripts/migrations.ts run",
+    "migration:run:prod": "typeorm migration:run -d dist/database/data-source.js",
+    "migration:revert": "ts-node scripts/migrations.ts revert",
+    "migration:reset": "ts-node scripts/migrations.ts reset",
     "sunlint": "node -r ./scripts/sunlint-compat.cjs ./node_modules/@sun-asterisk/sunlint/cli.js --all --input=src --languages typescript --no-ai --output-summary=reports/sunlint.json --output-html=reports/sunlint.html"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.8",
-    "@nestjs/core": "^11.2.8",
-    "@nestjs/platform-express": "^11.2.8",
     "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.2.8",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/platform-express": "^11.2.8",
     "@nestjs/swagger": "^11.4.8",
+    "@nestjs/throttler": "^6.7.1",
+    "@nestjs/typeorm": "^12.0.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "dotenv": "^17.4.2",
     "helmet": "^8.0.0",
     "nestjs-i18n": "10.8.5",
+    "pg": "^8.23.1",
+    "redis": "^5.12.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "typeorm": "^0.3.31"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",
@@ -42,5 +57,10 @@
     "typescript": "~5.9.0",
     "typescript-eslint": "^8.0.0"
   },
-  "overrides": {"multer": "^2.5.0"}
+  "overrides": {
+    "multer": "^2.5.0",
+    "typeorm": {
+      "glob": "^14.0.3"
+    }
+  }
 }
