@@ -11,6 +11,7 @@ describe('Blacklist availability', () => {
       new ConfigService({
         REDIS_URL: 'redis://127.0.0.1:6380/1',
       }),
+      {t: () => 'Session store unavailable'},
     );
     const unavailable = (error: unknown): boolean =>
       error instanceof ServiceUnavailableException && error.getStatus() === 503;

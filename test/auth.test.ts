@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {after, afterEach, before, beforeEach, describe, it} from 'node:test';
 import type {INestApplication} from '@nestjs/common';
+import {ConfigService} from '@nestjs/config';
 import {JwtService} from '@nestjs/jwt';
 import {Test} from '@nestjs/testing';
 import {createClient} from 'redis';
@@ -279,6 +280,71 @@ describe(
       assert.deepEqual(wrongPassword.body, unknown.body);
     });
 
+    it('blocks login with 429 after the configured number of attempts', async () => {
+      const {email} = await register();
+      const limit = 2;
+      const {AppModule} = await import('../src/app.module');
+      const {configureApplication} =
+        await import('../src/bootstrap/configure-application');
+      const {validateEnvironment} = await import('../src/config/environment');
+      const config = new ConfigService(
+        validateEnvironment({...process.env, AUTH_RATE_LIMIT: limit}),
+      );
+      const module = await Test.createTestingModule({imports: [AppModule]})
+        .overrideProvider(ConfigService)
+        .useValue(config)
+        .compile();
+      const limitedApp = module.createNestApplication();
+      try {
+        configureApplication(limitedApp);
+        await limitedApp.init();
+        const api = request(limitedApp.getHttpServer());
+        const body = {user: {email, password}};
+        for (let attempt = 0; attempt < limit; attempt++) {
+          await api.post('/api/users/login').send(body).expect(200);
+        }
+        const blocked = await api
+          .post('/api/users/login')
+          .set('Accept-Language', 'vi')
+          .send(body)
+          .expect(429);
+        assert.ok(Number(blocked.headers['retry-after']) > 0);
+        assert.deepEqual(blocked.body, {
+          errors: {body: ['Quá nhiều yêu cầu. Vui lòng thử lại sau.']},
+        });
+      } finally {
+        await limitedApp.close();
+      }
+    });
+
+    it('localizes authentication errors in English and Vietnamese', async () => {
+      const {email} = fixture();
+      for (const {language, badLogin, missingAuth} of [
+        {
+          language: 'en',
+          badLogin: 'Invalid email or password',
+          missingAuth: 'Authentication required',
+        },
+        {
+          language: 'vi-VN, en;q=0.8',
+          badLogin: 'Email hoặc mật khẩu không đúng',
+          missingAuth: 'Bạn cần đăng nhập để thực hiện thao tác này',
+        },
+      ]) {
+        const loginError = await request(server())
+          .post('/api/users/login')
+          .set('Accept-Language', language)
+          .send({user: {email, password}})
+          .expect(401);
+        assert.deepEqual(loginError.body, {errors: {body: [badLogin]}});
+        const currentError = await request(server())
+          .get('/api/user')
+          .set('Accept-Language', language)
+          .expect(401);
+        assert.deepEqual(currentError.body, {errors: {body: [missingAuth]}});
+      }
+    });
+
     it('rejects malformed login envelopes and unknown fields with 422', async () => {
       for (const body of [
         {},
@@ -322,25 +388,41 @@ describe(
       }
     });
 
-    it('rejects forged, expired, wrong-algorithm, and invalid-claim JWTs', async () => {
+    it('distinguishes JWT verification failures from verified JWTs with invalid claims', async () => {
       const user = await register();
       const payload = {sub: claims(user.token).sub, jti: randomUUID()};
-      const invalid = await Promise.all([
+      const verificationFailures = await Promise.all([
         jwt.signAsync(payload, {secret: randomUUID().repeat(2)}),
         jwt.signAsync(payload, {expiresIn: -1}),
         jwt.signAsync(payload, {algorithm: 'HS384'}),
         jwt.signAsync(payload, {issuer: 'untrusted-issuer'}),
         jwt.signAsync(payload, {audience: 'different-api'}),
+      ]);
+      for (const token of verificationFailures) {
+        const response = await request(server())
+          .get('/api/user')
+          .set('Authorization', `Token ${token}`)
+          .set('Accept-Language', 'en')
+          .expect(401);
+        assert.deepEqual(response.body, {
+          errors: {body: ['Invalid or expired token']},
+        });
+      }
+
+      const invalidClaims = await Promise.all([
         jwt.signAsync({...payload, jti: 'invalid-session-id'}),
         jwt.signAsync({...payload, sub: 'not-a-uuid'}),
       ]);
-      for (const token of invalid) {
-        assertError(
-          await request(server())
-            .get('/api/user')
-            .set('Authorization', `Token ${token}`),
-          401,
-        );
+      for (const token of invalidClaims) {
+        await jwt.verifyAsync(token);
+        const response = await request(server())
+          .get('/api/user')
+          .set('Authorization', `Token ${token}`)
+          .set('Accept-Language', 'en')
+          .expect(401);
+        assert.deepEqual(response.body, {
+          errors: {body: ['Invalid token claims']},
+        });
       }
     });
 
