@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   HttpCode,
   Post,
   Req,
@@ -19,6 +18,7 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import {ThrottlerGuard} from '@nestjs/throttler';
+import type {User} from '../users/entities/user.entity';
 import {
   AuthResponseDto,
   LoginUserRequestDto,
@@ -26,6 +26,7 @@ import {
 } from './auth.dto';
 import {AuthService} from './auth.service';
 import {AuthenticatedRequest} from './auth.types';
+import {CurrentUser} from './current-user.decorator';
 import {JwtAuthGuard} from './jwt-auth.guard';
 
 @ApiTags('authentication')
@@ -34,7 +35,6 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('users')
-  @Header('Cache-Control', 'no-store')
   @UseGuards(ThrottlerGuard)
   @ApiOperation({summary: 'Register an account'})
   @ApiCreatedResponse({type: AuthResponseDto})
@@ -47,7 +47,6 @@ export class AuthController {
 
   @Post('users/login')
   @HttpCode(200)
-  @Header('Cache-Control', 'no-store')
   @UseGuards(ThrottlerGuard)
   @ApiOperation({summary: 'Log in and create a separate JWT session'})
   @ApiOkResponse({type: AuthResponseDto})
@@ -57,18 +56,19 @@ export class AuthController {
   }
 
   @Get('user')
-  @Header('Cache-Control', 'no-store')
   @UseGuards(JwtAuthGuard)
   @ApiSecurity('token')
   @ApiOperation({summary: 'Get the current user with the original JWT'})
   @ApiOkResponse({type: AuthResponseDto})
-  current(@Req() request: AuthenticatedRequest): AuthResponseDto {
-    return this.auth.current(request.user, request.authToken);
+  current(
+    @CurrentUser() user: User,
+    @Req() request: AuthenticatedRequest,
+  ): AuthResponseDto {
+    return this.auth.current(user, request.authToken);
   }
 
   @Post('users/logout')
   @HttpCode(204)
-  @Header('Cache-Control', 'no-store')
   @UseGuards(JwtAuthGuard)
   @ApiSecurity('token')
   @ApiOperation({summary: 'Revoke only the current JWT until its expiration'})

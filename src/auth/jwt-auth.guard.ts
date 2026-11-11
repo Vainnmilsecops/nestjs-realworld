@@ -7,15 +7,11 @@ import {
 import {JwtService} from '@nestjs/jwt';
 import {InjectRepository} from '@nestjs/typeorm';
 import {isUUID} from 'class-validator';
+import {I18nService} from 'nestjs-i18n';
 import {Repository} from 'typeorm';
 import {TokenBlacklistService} from '../redis/token-blacklist.service';
 import {User} from '../users/entities/user.entity';
-import {
-  AuthenticatedRequest,
-  JWT_AUDIENCE,
-  JWT_ISSUER,
-  TokenClaims,
-} from './auth.types';
+import {AuthenticatedRequest, TokenClaims} from './auth.types';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -23,6 +19,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly jwt: JwtService,
     private readonly blacklist: TokenBlacklistService,
     @InjectRepository(User) private readonly users: Repository<User>,
+    private readonly translations: I18nService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -31,29 +28,35 @@ export class JwtAuthGuard implements CanActivate {
       request.headers.authorization ?? '',
     );
     const token = match?.[1];
-    if (!token) throw new UnauthorizedException('Authentication required');
-    let claims: TokenClaims;
-    try {
-      const payload = await this.jwt.verifyAsync<Record<string, unknown>>(
-        token,
-        {
-          algorithms: ['HS256'],
-          issuer: JWT_ISSUER,
-          audience: JWT_AUDIENCE,
-        },
+    if (!token) {
+      throw new UnauthorizedException(
+        this.translations.t('auth.AUTHENTICATION_REQUIRED'),
       );
-      if (!this.hasValidClaims(payload)) {
-        throw new UnauthorizedException('Invalid token claims');
-      }
-      claims = payload;
+    }
+    let claims: Record<string, unknown>;
+    try {
+      claims = await this.jwt.verifyAsync<Record<string, unknown>>(token);
     } catch {
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new UnauthorizedException(
+        this.translations.t('auth.INVALID_OR_EXPIRED_TOKEN'),
+      );
+    }
+    if (!this.hasValidClaims(claims)) {
+      throw new UnauthorizedException(
+        this.translations.t('auth.INVALID_TOKEN_CLAIMS'),
+      );
     }
     if (await this.blacklist.isRevoked(claims.jti)) {
-      throw new UnauthorizedException('Token has been revoked');
+      throw new UnauthorizedException(
+        this.translations.t('auth.REVOKED_TOKEN'),
+      );
     }
     const user = await this.users.findOneBy({id: claims.sub});
-    if (!user) throw new UnauthorizedException('User no longer exists');
+    if (!user) {
+      throw new UnauthorizedException(
+        this.translations.t('auth.USER_NOT_FOUND'),
+      );
+    }
     request.user = user;
     request.authClaims = claims;
     request.authToken = token;
@@ -76,8 +79,8 @@ export class JwtAuthGuard implements CanActivate {
       Number.isSafeInteger(payload.iat) &&
       payload.iat >= 0 &&
       payload.iat <= now &&
-      payload.iss === JWT_ISSUER &&
-      payload.aud === JWT_AUDIENCE
+      typeof payload.iss === 'string' &&
+      typeof payload.aud === 'string'
     );
   }
 }

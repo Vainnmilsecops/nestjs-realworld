@@ -1,6 +1,7 @@
 import {Injectable, UnauthorizedException} from '@nestjs/common';
 import {JwtService} from '@nestjs/jwt';
 import {InjectRepository} from '@nestjs/typeorm';
+import {I18nService} from 'nestjs-i18n';
 import {randomUUID} from 'node:crypto';
 import {Repository} from 'typeorm';
 import {TokenBlacklistService} from '../redis/token-blacklist.service';
@@ -15,6 +16,7 @@ export class AuthService {
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly jwt: JwtService,
     private readonly blacklist: TokenBlacklistService,
+    private readonly translations: I18nService,
   ) {}
 
   async register(input: RegisterUserDto): Promise<AuthResponseDto> {
@@ -40,8 +42,11 @@ export class AuthService {
       input.password,
       user?.passwordHash ?? DUMMY_PASSWORD_HASH,
     );
-    if (!user || !isValid)
-      throw new UnauthorizedException('Invalid email or password');
+    if (!user || !isValid) {
+      throw new UnauthorizedException(
+        this.translations.t('auth.INVALID_CREDENTIALS'),
+      );
+    }
     return this.issueToken(user);
   }
 

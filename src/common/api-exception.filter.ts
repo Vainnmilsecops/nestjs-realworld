@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import {Response} from 'express';
+import {I18nService} from 'nestjs-i18n';
 import {QueryFailedError} from 'typeorm';
 
 const UNIQUE_VIOLATION = '23505';
@@ -14,6 +15,8 @@ const UNIQUE_VIOLATION = '23505';
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(ApiExceptionFilter.name);
+
+  constructor(private readonly translations: I18nService) {}
 
   catch(error: unknown, host: ArgumentsHost): void {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -31,7 +34,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
       (error.driverError as {code?: string}).code === UNIQUE_VIOLATION
     ) {
       status = HttpStatus.UNPROCESSABLE_ENTITY;
-      messages = ['Email or username has already been taken'];
+      messages = [this.translations.t('auth.DUPLICATE_USER')];
     } else {
       // Record the error class without credentials, SQL parameters or tokens.
       this.logger.error({

@@ -3,6 +3,7 @@ import {ConfigService} from '@nestjs/config';
 import {DocumentBuilder, SwaggerModule} from '@nestjs/swagger';
 import helmet from 'helmet';
 import {NextFunction, Request, Response} from 'express';
+import {I18nService} from 'nestjs-i18n';
 import {ApiExceptionFilter} from '../common/api-exception.filter';
 
 export function configureApplication(app: INestApplication): void {
@@ -24,7 +25,7 @@ export function configureApplication(app: INestApplication): void {
     });
     next();
   });
-  app.useGlobalFilters(new ApiExceptionFilter());
+  app.useGlobalFilters(new ApiExceptionFilter(app.get(I18nService)));
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
