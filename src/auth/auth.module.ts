@@ -2,6 +2,7 @@ import {Module} from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
 import {JwtModule} from '@nestjs/jwt';
 import {ThrottlerModule} from '@nestjs/throttler';
+import type {Environment} from '../config/environment';
 import {RedisModule} from '../redis/redis.module';
 import {AuthController} from './auth.controller';
 import {AuthService} from './auth.service';
@@ -15,20 +16,20 @@ const AUTH_RATE_WINDOW_MS = 60_000;
     RedisModule,
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => [
+      useFactory: (config: ConfigService<Environment>) => [
         {
           ttl: AUTH_RATE_WINDOW_MS,
-          limit: config.getOrThrow<number>('AUTH_RATE_LIMIT'),
+          limit: config.getOrThrow('AUTH_RATE_LIMIT', {infer: true}),
         },
       ],
     }),
     JwtModule.registerAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.getOrThrow<string>('JWT_SECRET'),
+      useFactory: (config: ConfigService<Environment>) => ({
+        secret: config.getOrThrow('JWT_SECRET', {infer: true}),
         signOptions: {
           algorithm: 'HS256',
-          expiresIn: config.getOrThrow<number>('JWT_EXPIRES_IN_SECONDS'),
+          expiresIn: config.getOrThrow('JWT_EXPIRES_IN_SECONDS', {infer: true}),
           issuer: JWT_ISSUER,
           audience: JWT_AUDIENCE,
         },

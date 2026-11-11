@@ -7,7 +7,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import {I18n, I18nContext} from 'nestjs-i18n';
-import {HelloQueryDto, HelloResponseDto, languages} from './hello.dto';
+import {ENGLISH, VIETNAMESE} from '../i18n/languages';
+import {HelloQueryDto, HelloResponseDto} from './hello.dto';
 import {HelloService} from './hello.service';
 
 @ApiTags('hello')
@@ -31,8 +32,7 @@ export class HelloController {
     @Query() query: HelloQueryDto,
     @I18n() context: I18nContext,
   ): HelloResponseDto {
-    const resolved = context.lang.split('-')[0];
-    const language = query.lang ?? (resolved === languages[1] ? 'vi' : 'en');
+    const language = context.lang === VIETNAMESE ? VIETNAMESE : ENGLISH;
     return this.hello.greet(query.name, language);
   }
 }

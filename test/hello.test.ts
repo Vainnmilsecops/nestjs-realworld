@@ -86,6 +86,14 @@ describe('Hello API', () => {
     assert.deepEqual(override.body, {message: 'Hello, An!', language: 'en'});
   });
 
+  it('uses the fallback when the Accept-Language wildcard wins', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/hello')
+      .set('Accept-Language', '*, vi;q=0.5')
+      .expect(200);
+    assert.deepEqual(response.body, {message: 'Hello, World!', language: 'en'});
+  });
+
   it('keeps simultaneous requests in their own language', async () => {
     const [english, vietnamese] = await Promise.all([
       request(app.getHttpServer())
