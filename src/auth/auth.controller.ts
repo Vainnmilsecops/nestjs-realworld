@@ -5,6 +5,7 @@ import {
   Header,
   HttpCode,
   Post,
+  Put,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -23,6 +24,7 @@ import {
   AuthResponseDto,
   LoginUserRequestDto,
   RegisterUserRequestDto,
+  UpdateUserRequestDto,
 } from './auth.dto';
 import {AuthService} from './auth.service';
 import {AuthenticatedRequest} from './auth.types';
@@ -64,6 +66,23 @@ export class AuthController {
   @ApiOkResponse({type: AuthResponseDto})
   current(@Req() request: AuthenticatedRequest): AuthResponseDto {
     return this.auth.current(request.user, request.authToken);
+  }
+
+  @Put('user')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(JwtAuthGuard)
+  @ApiSecurity('token')
+  @ApiOperation({summary: 'Update the current user'})
+  @ApiOkResponse({type: AuthResponseDto})
+  @ApiUnauthorizedResponse({description: 'Authentication required'})
+  @ApiUnprocessableEntityResponse({
+    description: 'Invalid input or duplicate username/email',
+  })
+  update(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: UpdateUserRequestDto,
+  ): Promise<AuthResponseDto> {
+    return this.auth.update(request.user, request.authToken, body.user);
   }
 
   @Post('users/logout')

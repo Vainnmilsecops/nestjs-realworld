@@ -5,7 +5,12 @@ import {randomUUID} from 'node:crypto';
 import {Repository} from 'typeorm';
 import {TokenBlacklistService} from '../redis/token-blacklist.service';
 import {User} from '../users/entities/user.entity';
-import {AuthResponseDto, LoginUserDto, RegisterUserDto} from './auth.dto';
+import {
+  AuthResponseDto,
+  LoginUserDto,
+  RegisterUserDto,
+  UpdateUserDto,
+} from './auth.dto';
 import {TokenClaims} from './auth.types';
 import {DUMMY_PASSWORD_HASH, hashPassword, verifyPassword} from './password';
 
@@ -55,6 +60,28 @@ export class AuthService {
         image: user.image,
       },
     };
+  }
+
+  async update(
+    user: User,
+    token: string,
+    input: UpdateUserDto,
+  ): Promise<AuthResponseDto> {
+    const changes: Partial<User> = {};
+    if (input.username !== undefined) changes.username = input.username;
+    if (input.email !== undefined) changes.email = input.email;
+    if (input.bio !== undefined) changes.bio = input.bio;
+    if (input.image !== undefined) changes.image = input.image;
+    if (input.password !== undefined) {
+      changes.passwordHash = await hashPassword(input.password);
+    }
+    if (Object.keys(changes).length === 0) return this.current(user, token);
+
+    const {affected} = await this.users.update(user.id, changes);
+    const updated =
+      affected === 0 ? null : await this.users.findOneBy({id: user.id});
+    if (!updated) throw new UnauthorizedException('User no longer exists');
+    return this.current(updated, token);
   }
 
   async logout(claims: TokenClaims): Promise<void> {

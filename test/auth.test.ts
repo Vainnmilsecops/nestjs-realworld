@@ -113,13 +113,20 @@ describe(
       return assertUser(response, input);
     }
 
-    async function truncateUsers(): Promise<void> {
+    function updateUser(token: string, fields: Record<string, unknown>) {
+      return request(server())
+        .put('/api/user')
+        .set('Authorization', `Token ${token}`)
+        .send({user: fields});
+    }
+
+    async function truncateUserFixtures(): Promise<void> {
       if (!database?.isInitialized) return;
       // Revalidate the explicit service targets immediately before destructive SQL.
       const {databaseUrl} = configureTestServices();
       assert.equal(database.options.type, 'postgres');
       assert.equal((database.options as {url?: string}).url, databaseUrl);
-      await database.query('TRUNCATE TABLE public.users');
+      await database.query('TRUNCATE TABLE public.follows, public.users');
     }
 
     before(
@@ -154,7 +161,7 @@ describe(
       {timeout: 30000},
     );
 
-    beforeEach(truncateUsers);
+    beforeEach(truncateUserFixtures);
 
     afterEach(async () => {
       try {
@@ -163,7 +170,7 @@ describe(
         }
       } finally {
         keysCreatedByThisSuite.clear();
-        await truncateUsers();
+        await truncateUserFixtures();
       }
     });
 
@@ -422,6 +429,140 @@ describe(
 
     it('requires authentication for logout', async () => {
       assertError(await request(server()).post('/api/users/logout'), 401);
+    });
+
+    it('updates only supplied account fields, hashes the new password and preserves the original token', async () => {
+      const user = await register();
+      const id = claims(user.token).sub;
+      const selection = {where: {id}, select: {id: true, passwordHash: true}};
+      const before = await users.findOneOrFail(selection);
+      const profile = {
+        bio: 'I write tutorials.',
+        image: 'https://example.com/avatar.png',
+      };
+      const profileEdit = await updateUser(user.token, profile).expect(200);
+      assert.deepEqual(profileEdit.body, {user: {...user, ...profile}});
+
+      const email = fixture().email;
+      const newPassword = 'Changed-training-password-123!';
+      const credentialsEdit = await updateUser(user.token, {
+        email: ` ${email.toUpperCase()} `,
+        password: newPassword,
+      }).expect(200);
+      assert.deepEqual(credentialsEdit.body, {
+        user: {...user, ...profile, email},
+      });
+      const stored = await users.findOneOrFail(selection);
+      assert.match(
+        stored.passwordHash,
+        /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/,
+      );
+      assert.notEqual(stored.passwordHash, before.passwordHash);
+
+      const cleared = await updateUser(user.token, {
+        bio: null,
+        image: null,
+      }).expect(200);
+      assert.deepEqual(cleared.body, {user: {...user, email}});
+      const current = await request(server())
+        .get('/api/user')
+        .set('Authorization', `Token ${user.token}`)
+        .expect(200);
+      assert.deepEqual(current.body, cleared.body);
+      const oldLogin = await request(server())
+        .post('/api/users/login')
+        .send({user: {email, password}});
+      assertError(oldLogin, 401);
+      const newLogin = await request(server())
+        .post('/api/users/login')
+        .send({user: {email, password: newPassword}})
+        .expect(200);
+      assertUser(newLogin, {...user, email});
+    });
+
+    it('rejects unauthenticated updates and invalid or duplicate credentials without changing the account', async () => {
+      assertError(
+        await request(server())
+          .put('/api/user')
+          .send({user: {bio: 'Unauthorized'}}),
+        401,
+      );
+      const user = await register();
+      const other = await register();
+      for (const fields of [
+        {email: null},
+        {username: null},
+        {password: null},
+        {email: ` ${other.email.toUpperCase()} `},
+        {username: other.username},
+      ]) {
+        assertError(
+          await updateUser(user.token, {...fields, bio: 'Must not be saved'}),
+          422,
+        );
+      }
+      const current = await request(server())
+        .get('/api/user')
+        .set('Authorization', `Token ${user.token}`)
+        .expect(200);
+      assert.deepEqual(current.body, {user});
+    });
+
+    it('returns only public profile fields and resolves the follow direction for the authenticated viewer', async () => {
+      const subject = await register();
+      const viewer = await register();
+      const subjectId = claims(subject.token).sub;
+      const viewerId = claims(viewer.token).sub;
+      const publicFields = {
+        bio: 'I write tutorials.',
+        image: 'https://example.com/avatar.png',
+      };
+      await users.update({id: subjectId}, publicFields);
+      assert.ok(database);
+      await database.query(
+        'INSERT INTO public.follows (follower_id, following_id) VALUES ($1, $2)',
+        [viewerId, subjectId],
+      );
+
+      const path = `/api/profiles/${subject.username}`;
+      const profile = {username: subject.username, ...publicFields};
+      const guest = await request(server()).get(path).expect(200);
+      assert.deepEqual(guest.body, {profile: {...profile, following: false}});
+      const follower = await request(server())
+        .get(path)
+        .set('Authorization', `Token ${viewer.token}`)
+        .expect(200);
+      assert.deepEqual(follower.body, {profile: {...profile, following: true}});
+      const reverse = await request(server())
+        .get(`/api/profiles/${viewer.username}`)
+        .set('Authorization', `Token ${subject.token}`)
+        .expect(200);
+      assert.equal(reverse.body.profile.following, false);
+    });
+
+    it('returns 404 for a missing profile and rejects invalid or revoked credentials', async () => {
+      assertError(
+        await request(server()).get(`/api/profiles/${fixture().username}`),
+        404,
+      );
+      const user = await register();
+      const path = `/api/profiles/${user.username}`;
+      assertError(
+        await request(server())
+          .get(path)
+          .set('Authorization', 'Token not-a-jwt'),
+        401,
+      );
+      await request(server())
+        .post('/api/users/logout')
+        .set('Authorization', `Token ${user.token}`)
+        .expect(204);
+      assertError(
+        await request(server())
+          .get(path)
+          .set('Authorization', `Token ${user.token}`),
+        401,
+      );
     });
   },
 );
