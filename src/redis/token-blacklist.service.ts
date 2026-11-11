@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
 import {createClient} from 'redis';
+import type {Environment} from '../config/environment';
 
 const DEFAULT_REDIS_TIMEOUT_MS = 2000;
 const DEFAULT_REDIS_QUEUE_LIMIT = 1000;
@@ -17,20 +18,22 @@ export class TokenBlacklistService implements OnModuleInit, OnModuleDestroy {
   private client?: ReturnType<typeof createClient>;
   private timeoutMs = DEFAULT_REDIS_TIMEOUT_MS;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly config: ConfigService<Environment>) {}
 
   async onModuleInit(): Promise<void> {
-    this.timeoutMs = this.config.get<number>(
+    this.timeoutMs = this.config.get(
       'REDIS_TIMEOUT_MS',
       DEFAULT_REDIS_TIMEOUT_MS,
+      {infer: true},
     );
     this.client = createClient({
-      url: this.config.getOrThrow<string>('REDIS_URL'),
+      url: this.config.getOrThrow('REDIS_URL', {infer: true}),
       socket: {connectTimeout: this.timeoutMs, reconnectStrategy: false},
       disableOfflineQueue: true,
-      commandsQueueMaxLength: this.config.get<number>(
+      commandsQueueMaxLength: this.config.get(
         'REDIS_QUEUE_LIMIT',
         DEFAULT_REDIS_QUEUE_LIMIT,
+        {infer: true},
       ),
     });
     this.client.on('error', (error: unknown) =>

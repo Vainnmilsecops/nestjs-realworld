@@ -1,6 +1,7 @@
 import {Injectable} from '@nestjs/common';
 import {I18nService} from 'nestjs-i18n';
-import {HelloResponseDto, Language} from './hello.dto';
+import type {Language} from '../i18n/languages';
+import {HelloResponseDto} from './hello.dto';
 
 @Injectable()
 export class HelloService {

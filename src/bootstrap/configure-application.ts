@@ -4,9 +4,10 @@ import {DocumentBuilder, SwaggerModule} from '@nestjs/swagger';
 import helmet from 'helmet';
 import {NextFunction, Request, Response} from 'express';
 import {ApiExceptionFilter} from '../common/api-exception.filter';
+import type {Environment} from '../config/environment';
 
 export function configureApplication(app: INestApplication): void {
-  const config = app.get(ConfigService);
+  const config = app.get<ConfigService<Environment>>(ConfigService);
   app.setGlobalPrefix('api');
   app.use(
     helmet({
@@ -15,7 +16,7 @@ export function configureApplication(app: INestApplication): void {
       },
     }),
   );
-  app.enableCors({origin: config.getOrThrow<string[]>('CORS_ORIGINS')});
+  app.enableCors({origin: config.getOrThrow('CORS_ORIGINS', {infer: true})});
   app.use((_request: Request, response: Response, next: NextFunction) => {
     response.set({
       'Cache-Control': 'no-store',

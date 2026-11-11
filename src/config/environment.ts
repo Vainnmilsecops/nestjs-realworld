@@ -1,3 +1,16 @@
+export type Environment = {
+  APP_HOST: string;
+  APP_PORT: number;
+  CORS_ORIGINS: string[];
+  DATABASE_URL: string;
+  REDIS_URL: string;
+  JWT_SECRET: string;
+  JWT_EXPIRES_IN_SECONDS: number;
+  AUTH_RATE_LIMIT: number;
+  REDIS_TIMEOUT_MS: number;
+  REDIS_QUEUE_LIMIT: number;
+};
+
 export class EnvironmentError extends Error {
   constructor(message: string) {
     super(message);
@@ -5,7 +18,9 @@ export class EnvironmentError extends Error {
   }
 }
 
-export function validateEnvironment(input: Record<string, unknown>) {
+export function validateEnvironment(
+  input: Record<string, unknown>,
+): Environment {
   const port = Number(input.APP_PORT ?? 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new EnvironmentError(
