@@ -2,6 +2,8 @@ import {Module} from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
 import {JwtModule} from '@nestjs/jwt';
 import {ThrottlerModule} from '@nestjs/throttler';
+import {AttachmentsModule} from '../attachments/attachments.module';
+import {AttachmentsController} from './attachments.controller';
 import {RedisModule} from '../redis/redis.module';
 import {AuthController} from './auth.controller';
 import {AuthService} from './auth.service';
@@ -12,6 +14,7 @@ const AUTH_RATE_WINDOW_MS = 60_000;
 
 @Module({
   imports: [
+    AttachmentsModule,
     RedisModule,
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
@@ -40,8 +43,8 @@ const AUTH_RATE_WINDOW_MS = 60_000;
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, AttachmentsController],
   providers: [AuthService, JwtAuthGuard],
-  exports: [AuthService, JwtAuthGuard],
+  exports: [AuthService, JwtAuthGuard, JwtModule, RedisModule],
 })
 export class AuthModule {}

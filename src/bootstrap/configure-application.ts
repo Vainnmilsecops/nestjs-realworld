@@ -36,9 +36,9 @@ export function configureApplication(app: INestApplication): void {
   const options = new DocumentBuilder()
     .setTitle('RealWorld Training API')
     .setDescription(
-      'Pull 2: PostgreSQL migrations and JWT authentication with Redis logout revocation.',
+      'RealWorld accounts, profiles, follows and private avatars.',
     )
-    .setVersion('0.2.0')
+    .setVersion('0.3.0')
     .addApiKey(
       {
         type: 'apiKey',
@@ -49,9 +49,23 @@ export function configureApplication(app: INestApplication): void {
       'token',
     )
     .build();
-  SwaggerModule.setup(
-    'api/docs',
-    app,
-    SwaggerModule.createDocument(app, options),
-  );
+  const document = SwaggerModule.createDocument(app, options);
+  const updateUser = document.paths['/api/user']?.put;
+  if (updateUser?.requestBody && 'content' in updateUser.requestBody) {
+    updateUser.requestBody.content['multipart/form-data'] = {
+      schema: {
+        type: 'object',
+        properties: {
+          avatar: {type: 'string', format: 'binary'},
+          user: {
+            type: 'string',
+            description: 'Optional JSON object containing account fields',
+            example: '{"bio":"I write tutorials."}',
+          },
+        },
+        anyOf: [{required: ['avatar']}, {required: ['user']}],
+      },
+    };
+  }
+  SwaggerModule.setup('api/docs', app, document);
 }

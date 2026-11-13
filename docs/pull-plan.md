@@ -23,14 +23,14 @@ Nhánh hiện tại: `feature/02-database-auth-redis`; base là `main`.
 
 Xem [cách chạy](../README.md) và [migration thủ công](database-migrations.md). Không merge trước khi mentor approve.
 
-## Pull 3 — Người dùng, avatar, attachments · kế hoạch
+## Pull 3 — Người dùng, avatar, attachments
 
-Nhánh dự kiến: `feature/03-users-avatar-attachments`.
+Nhánh `feature/03-users-avatar-attachments`. [PR #30](https://github.com/Vainnmilsecops/nestjs-realworld/pull/30)
 
 - Cập nhật người dùng, xem profile, follow và unfollow.
 - Avatar lưu ở filesystem local; kiểm tra định dạng và kích thước upload.
 - Bảng attachments có `id` kiểu UUID, `url`, `file_name`, `file_type`, `file_size` và thông tin chủ sở hữu đa hình.
-- Endpoint quản lý hoặc truy cập attachment riêng tư kiểm tra quyền chủ sở hữu; hoàn thiện thiết kế quyền truy cập khi triển khai.
+- `GET /api/attachments/:id` dùng JWT và kiểm tra chủ sở hữu trước khi trả ảnh.
 
 ## Pull 4 — Articles · kế hoạch
 

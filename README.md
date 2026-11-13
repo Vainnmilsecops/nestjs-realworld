@@ -1,15 +1,13 @@
 # NestJS RealWorld
 
-Backend học tập theo [hướng dẫn NestJS của Sun*](https://github.com/framgia/Training-Guideline/blob/master/Nodejs/tutorial.md), triển khai theo [kế hoạch 6 pull](docs/pull-plan.md). Pull 1 đã merge qua [PR #27](https://github.com/Vainnmilsecops/nestjs-realworld/pull/27). Pull 2 đang triển khai trên `feature/02-database-auth-redis`: PostgreSQL, migration thủ công, đăng ký/đăng nhập và JWT logout qua Redis blacklist.
-
-Repo giữ `main`, `feature/01-init-i18n-swagger` và `feature/02-database-auth-redis`, cả local và remote. Nhánh Pull 1 được giữ lại để tra cứu; nhánh cho Pull 3–6 sẽ được tạo khi bắt đầu làm. Bản thử nghiệm trước được lưu bằng [tag `archive/previous-implementation-2026-11-04`](https://github.com/Vainnmilsecops/nestjs-realworld/tree/archive/previous-implementation-2026-11-04).
+Backend học tập theo [hướng dẫn NestJS của Sun*](https://github.com/framgia/Training-Guideline/blob/master/Nodejs/tutorial.md), triển khai theo [kế hoạch 6 pull](docs/pull-plan.md). [Pull 3](https://github.com/Vainnmilsecops/nestjs-realworld/pull/30) bổ sung cập nhật tài khoản, hồ sơ, follow/unfollow và ảnh đại diện.
 
 ## Chạy ứng dụng
 
 Cần Node.js 22 trở lên, npm và Docker Compose:
 
 ```sh
-git switch feature/02-database-auth-redis
+git switch feature/03-users-avatar-attachments
 npm ci
 npm run setup
 docker compose -p realworld-training up -d --wait
@@ -41,6 +39,14 @@ Response người dùng theo RealWorld: `{ "user": { "email": "...", "token": ".
 JWT dùng HS256, `sub` là UUID người dùng và mỗi phiên đăng nhập có `jti` riêng. Token mặc định có hiệu lực 3.600 giây. Logout lưu `jti` vào Redis blacklist với thời điểm hết hạn `EXAT` bằng `exp` của token; các phiên đăng nhập khác vẫn hoạt động. Gọi logout lại bằng token đã thu hồi trả `401`. Redis bật AOF và `noeviction`; nếu không kiểm tra hoặc ghi được blacklist, API liên quan trả `503` thay vì cho token đi qua.
 
 Validation envelope trả `422`; token sai/hết hạn/đã thu hồi hoặc sai thông tin đăng nhập trả `401`; email/username trùng trả `422`. Đăng ký và đăng nhập được giới hạn mặc định 10 request/phút theo IP cho từng route, cấu hình bằng `AUTH_RATE_LIMIT`.
+
+## Hồ sơ và ảnh đại diện
+
+- `PUT /api/user` nhận JSON `{ "user": { "bio": "..." } }` để cập nhật các trường được gửi. Đặt `user.image` thành `null` để xóa ảnh hiện tại.
+- `GET /api/profiles/:username` trả hồ sơ công khai. Gửi token để biết tài khoản hiện tại có đang theo dõi hồ sơ đó hay không.
+- `POST /api/profiles/:username/follow` và `DELETE /api/profiles/:username/follow` cần token và trả hồ sơ với trạng thái `following` sau thao tác.
+- Để upload, gửi `PUT /api/user` dạng `multipart/form-data` với trường file `avatar`. Có thể gửi kèm trường text `user` chứa JSON, ví dụ `{"bio":"Tôi viết hướng dẫn."}`. API nhận JPEG, PNG hoặc WebP tối đa 2 MiB.
+- Sau khi upload, `user.image` là đường dẫn `/api/attachments/<uuid>`. Chủ tài khoản gửi token khi tải ảnh qua đường dẫn này. File lưu trong `.local/uploads` theo mặc định hoặc theo `AVATAR_UPLOAD_DIR`.
 
 ## Cấu hình
 

@@ -1,6 +1,9 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {mkdtemp, readdir, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
 import {after, afterEach, before, beforeEach, describe, it} from 'node:test';
 import type {INestApplication} from '@nestjs/common';
 import {JwtService} from '@nestjs/jwt';
@@ -31,6 +34,15 @@ interface Claims {
 const password = 'Training-password-123!';
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const attachmentPrefix = '/api/attachments/';
+const redAvatar = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+  'base64',
+);
+const blueAvatar = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 function fixture() {
   const suffix = randomUUID().replaceAll('-', '');
@@ -58,6 +70,9 @@ describe(
     let users: Repository<User>;
     let redis: ReturnType<typeof createClient> | undefined;
     let jwt: JwtService;
+    let avatarDirectory: string | undefined;
+    const avatarDirectoryPrefix = resolve(tmpdir(), 'realworld-auth-avatars-');
+    const originalAvatarDirectory = process.env.AVATAR_UPLOAD_DIR;
     const keysCreatedByThisSuite = new Set<string>();
 
     function server() {
@@ -113,18 +128,29 @@ describe(
       return assertUser(response, input);
     }
 
-    async function truncateUsers(): Promise<void> {
+    function updateUser(token: string, fields: Record<string, unknown>) {
+      return request(server())
+        .put('/api/user')
+        .set('Authorization', `Token ${token}`)
+        .send({user: fields});
+    }
+
+    async function truncateUserFixtures(): Promise<void> {
       if (!database?.isInitialized) return;
       // Revalidate the explicit service targets immediately before destructive SQL.
       const {databaseUrl} = configureTestServices();
       assert.equal(database.options.type, 'postgres');
       assert.equal((database.options as {url?: string}).url, databaseUrl);
-      await database.query('TRUNCATE TABLE public.users');
+      await database.query(
+        'TRUNCATE TABLE public.attachments, public.follows, public.users',
+      );
     }
 
     before(
       async () => {
         const services = configureTestServices();
+        avatarDirectory = await mkdtemp(avatarDirectoryPrefix);
+        process.env.AVATAR_UPLOAD_DIR = avatarDirectory;
         const {databaseOptions} =
           await import('../src/database/database-options');
         const {User: UserEntity} =
@@ -154,7 +180,7 @@ describe(
       {timeout: 30000},
     );
 
-    beforeEach(truncateUsers);
+    beforeEach(truncateUserFixtures);
 
     afterEach(async () => {
       try {
@@ -163,7 +189,7 @@ describe(
         }
       } finally {
         keysCreatedByThisSuite.clear();
-        await truncateUsers();
+        await truncateUserFixtures();
       }
     });
 
@@ -176,6 +202,23 @@ describe(
         } finally {
           if (database?.isInitialized) await database.destroy();
         }
+      }
+    });
+
+    after(async () => {
+      if (originalAvatarDirectory === undefined) {
+        delete process.env.AVATAR_UPLOAD_DIR;
+      } else {
+        process.env.AVATAR_UPLOAD_DIR = originalAvatarDirectory;
+      }
+      if (avatarDirectory) {
+        const directory = resolve(avatarDirectory);
+        assert.ok(directory.startsWith(avatarDirectoryPrefix));
+        assert.match(
+          directory.slice(avatarDirectoryPrefix.length),
+          /^[a-z0-9]+$/i,
+        );
+        await rm(directory, {recursive: true, force: true});
       }
     });
 
@@ -422,6 +465,350 @@ describe(
 
     it('requires authentication for logout', async () => {
       assertError(await request(server()).post('/api/users/logout'), 401);
+    });
+
+    it('updates only supplied account fields, hashes the new password and preserves the original token', async () => {
+      const user = await register();
+      const id = claims(user.token).sub;
+      const selection = {where: {id}, select: {id: true, passwordHash: true}};
+      const before = await users.findOneOrFail(selection);
+      const profile = {
+        bio: 'I write tutorials.',
+        image: 'https://example.com/avatar.png',
+      };
+      const profileEdit = await updateUser(user.token, profile).expect(200);
+      assert.deepEqual(profileEdit.body, {user: {...user, ...profile}});
+
+      const email = fixture().email;
+      const newPassword = 'Changed-training-password-123!';
+      const credentialsEdit = await updateUser(user.token, {
+        email: ` ${email.toUpperCase()} `,
+        password: newPassword,
+      }).expect(200);
+      assert.deepEqual(credentialsEdit.body, {
+        user: {...user, ...profile, email},
+      });
+      const stored = await users.findOneOrFail(selection);
+      assert.match(
+        stored.passwordHash,
+        /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/,
+      );
+      assert.notEqual(stored.passwordHash, before.passwordHash);
+
+      const cleared = await updateUser(user.token, {
+        bio: null,
+        image: null,
+      }).expect(200);
+      assert.deepEqual(cleared.body, {user: {...user, email}});
+      const current = await request(server())
+        .get('/api/user')
+        .set('Authorization', `Token ${user.token}`)
+        .expect(200);
+      assert.deepEqual(current.body, cleared.body);
+      const oldLogin = await request(server())
+        .post('/api/users/login')
+        .send({user: {email, password}});
+      assertError(oldLogin, 401);
+      const newLogin = await request(server())
+        .post('/api/users/login')
+        .send({user: {email, password: newPassword}})
+        .expect(200);
+      assertUser(newLogin, {...user, email});
+    });
+
+    it('rejects unauthenticated updates and invalid or duplicate credentials without changing the account', async () => {
+      assertError(
+        await request(server())
+          .put('/api/user')
+          .send({user: {bio: 'Unauthorized'}}),
+        401,
+      );
+      const user = await register();
+      const other = await register();
+      for (const fields of [
+        {email: null},
+        {username: null},
+        {password: null},
+        {email: ` ${other.email.toUpperCase()} `},
+        {username: other.username},
+      ]) {
+        assertError(
+          await updateUser(user.token, {...fields, bio: 'Must not be saved'}),
+          422,
+        );
+      }
+      const current = await request(server())
+        .get('/api/user')
+        .set('Authorization', `Token ${user.token}`)
+        .expect(200);
+      assert.deepEqual(current.body, {user});
+    });
+
+    it('returns only public profile fields and resolves the follow direction for the authenticated viewer', async () => {
+      const subject = await register();
+      const viewer = await register();
+      const subjectId = claims(subject.token).sub;
+      const viewerId = claims(viewer.token).sub;
+      const publicFields = {
+        bio: 'I write tutorials.',
+        image: 'https://example.com/avatar.png',
+      };
+      await users.update({id: subjectId}, publicFields);
+      assert.ok(database);
+      await database.query(
+        'INSERT INTO public.follows (follower_id, following_id) VALUES ($1, $2)',
+        [viewerId, subjectId],
+      );
+
+      const path = `/api/profiles/${subject.username}`;
+      const profile = {username: subject.username, ...publicFields};
+      const guest = await request(server()).get(path).expect(200);
+      assert.deepEqual(guest.body, {profile: {...profile, following: false}});
+      const follower = await request(server())
+        .get(path)
+        .set('Authorization', `Token ${viewer.token}`)
+        .expect(200);
+      assert.deepEqual(follower.body, {profile: {...profile, following: true}});
+      const reverse = await request(server())
+        .get(`/api/profiles/${viewer.username}`)
+        .set('Authorization', `Token ${subject.token}`)
+        .expect(200);
+      assert.equal(reverse.body.profile.following, false);
+    });
+
+    it('returns 404 for a missing profile and rejects invalid or revoked credentials', async () => {
+      assertError(
+        await request(server()).get(`/api/profiles/${fixture().username}`),
+        404,
+      );
+      const user = await register();
+      const path = `/api/profiles/${user.username}`;
+      assertError(
+        await request(server())
+          .get(path)
+          .set('Authorization', 'Token not-a-jwt'),
+        401,
+      );
+      await request(server())
+        .post('/api/users/logout')
+        .set('Authorization', `Token ${user.token}`)
+        .expect(204);
+      assertError(
+        await request(server())
+          .get(path)
+          .set('Authorization', `Token ${user.token}`),
+        401,
+      );
+    });
+
+    it('follows and unfollows a profile idempotently and updates the viewer state', async () => {
+      const subject = await register();
+      const viewer = await register();
+      const path = `/api/profiles/${subject.username}`;
+      const authorization = `Token ${viewer.token}`;
+      for (const [method, following] of [
+        ['post', true],
+        ['delete', false],
+      ] as const) {
+        const profile = {
+          username: subject.username,
+          bio: null,
+          image: null,
+          following,
+        };
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const response = await request(server())
+            [method](`${path}/follow`)
+            .set('Authorization', authorization)
+            .expect(200);
+          assert.deepEqual(response.body, {profile});
+        }
+        const current = await request(server())
+          .get(path)
+          .set('Authorization', authorization)
+          .expect(200);
+        assert.deepEqual(current.body, {profile});
+      }
+    });
+
+    it('rejects guest, self, and missing-target follow requests', async () => {
+      const user = await register();
+      const self = `/api/profiles/${user.username}/follow`;
+      const missing = `/api/profiles/${fixture().username}/follow`;
+      for (const method of ['post', 'delete'] as const) {
+        assertError(await request(server())[method](self), 401);
+        assertError(
+          await request(server())
+            [method](self)
+            .set('Authorization', `Token ${user.token}`),
+          422,
+        );
+        assertError(
+          await request(server())
+            [method](missing)
+            .set('Authorization', `Token ${user.token}`),
+          404,
+        );
+      }
+    });
+
+    it('stores, serves privately, replaces, and removes an uploaded avatar', async () => {
+      assert.ok(database);
+      assert.ok(avatarDirectory);
+      const owner = await register();
+      const other = await register();
+      const authorization = `Token ${owner.token}`;
+      const bio = 'I write tutorials.';
+      const uploaded = await request(server())
+        .put('/api/user')
+        .set('Authorization', authorization)
+        .field('user', JSON.stringify({bio}))
+        .attach('avatar', redAvatar, {
+          filename: 'avatar.png',
+          contentType: 'image/png',
+        })
+        .expect(200);
+      const image = (uploaded.body.user as UserView).image;
+      assert.ok(image && image.startsWith(attachmentPrefix));
+      const id = image.slice(attachmentPrefix.length);
+      assert.match(id, uuidPattern);
+      assert.deepEqual(uploaded.body, {user: {...owner, bio, image}});
+      const rows = await database.query(
+        'SELECT owner_type, owner_id, url, file_name, file_type, file_size FROM public.attachments WHERE id = $1',
+        [id],
+      );
+      assert.equal(rows.length, 1);
+      const {file_name: fileName, ...metadata} = rows[0];
+      assert.equal(fileName, `${id}.png`);
+      assert.deepEqual(metadata, {
+        owner_type: 'user',
+        owner_id: claims(owner.token).sub,
+        url: image,
+        file_type: 'image/png',
+        file_size: redAvatar.length,
+      });
+      assert.deepEqual(await readdir(avatarDirectory), [fileName]);
+
+      const duplicateEmail = await request(server())
+        .put('/api/user')
+        .set('Authorization', authorization)
+        .field('user', JSON.stringify({email: other.email}))
+        .attach('avatar', blueAvatar, {
+          filename: 'replacement.png',
+          contentType: 'image/png',
+        });
+      assertError(duplicateEmail, 422);
+      assert.deepEqual(
+        await database.query('SELECT id FROM public.attachments'),
+        [{id}],
+      );
+      assert.deepEqual(await readdir(avatarDirectory), [fileName]);
+
+      const download = await request(server())
+        .get(image)
+        .set('Authorization', authorization)
+        .expect('Content-Type', /image\/png/)
+        .expect('Cache-Control', /no-store/)
+        .expect(200);
+      assert.deepEqual(download.body, redAvatar);
+      assertError(await request(server()).get(image), 401);
+      assertError(
+        await request(server())
+          .get(image)
+          .set('Authorization', `Token ${other.token}`),
+        404,
+      );
+      assertError(
+        await request(server())
+          .get(`${attachmentPrefix}${randomUUID()}`)
+          .set('Authorization', authorization),
+        404,
+      );
+
+      const replacement = await request(server())
+        .put('/api/user')
+        .set('Authorization', authorization)
+        .attach('avatar', blueAvatar, {
+          filename: 'replacement.png',
+          contentType: 'image/png',
+        })
+        .expect(200);
+      const newImage = (replacement.body.user as UserView).image;
+      assert.ok(newImage && newImage.startsWith(attachmentPrefix));
+      assert.match(newImage.slice(attachmentPrefix.length), uuidPattern);
+      assert.notEqual(newImage, image);
+      assert.deepEqual(replacement.body, {
+        user: {...owner, bio, image: newImage},
+      });
+      assertError(
+        await request(server()).get(image).set('Authorization', authorization),
+        404,
+      );
+      const updatedDownload = await request(server())
+        .get(newImage)
+        .set('Authorization', authorization)
+        .expect(200);
+      assert.deepEqual(updatedDownload.body, blueAvatar);
+      const remainingFiles = await readdir(avatarDirectory);
+      assert.equal(remainingFiles.length, 1);
+      assert.equal(remainingFiles.includes(fileName), false);
+
+      const cleared = await updateUser(owner.token, {image: null}).expect(200);
+      assert.deepEqual(cleared.body, {user: {...owner, bio, image: null}});
+      assertError(
+        await request(server())
+          .get(newImage)
+          .set('Authorization', authorization),
+        404,
+      );
+      assert.deepEqual(
+        await database.query('SELECT id FROM public.attachments'),
+        [],
+      );
+      assert.deepEqual(await readdir(avatarDirectory), []);
+    });
+
+    it('rejects invalid avatar bytes and malformed multipart user JSON without saving an attachment', async () => {
+      assert.ok(database);
+      assert.ok(avatarDirectory);
+      const user = await register();
+      const authorization = `Token ${user.token}`;
+      const filesBefore = await readdir(avatarDirectory);
+      const badImage = await request(server())
+        .put('/api/user')
+        .set('Authorization', authorization)
+        .attach('avatar', Buffer.from('not an image'), {
+          filename: 'invalid.png',
+          contentType: 'image/png',
+        });
+      assertError(badImage, 422);
+      const badJson = await request(server())
+        .put('/api/user')
+        .set('Authorization', authorization)
+        .field('user', '{"bio":')
+        .attach('avatar', redAvatar, {
+          filename: 'avatar.png',
+          contentType: 'image/png',
+        });
+      assertError(badJson, 422);
+      const oversized = await request(server())
+        .put('/api/user')
+        .set('Authorization', authorization)
+        .attach('avatar', Buffer.alloc(2 * 1024 * 1024 + 1), {
+          filename: 'oversized.png',
+          contentType: 'image/png',
+        });
+      assertError(oversized, 413);
+      const current = await request(server())
+        .get('/api/user')
+        .set('Authorization', authorization)
+        .expect(200);
+      assert.deepEqual(current.body, {user});
+      assert.deepEqual(
+        await database.query('SELECT id FROM public.attachments'),
+        [],
+      );
+      assert.deepEqual(await readdir(avatarDirectory), filesBefore);
     });
   },
 );
