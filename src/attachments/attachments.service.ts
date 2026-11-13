@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  PayloadTooLargeException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {ConfigService} from '@nestjs/config';
@@ -48,10 +49,8 @@ export class AttachmentsService {
     file: {buffer: Buffer},
   ): Promise<Attachment> {
     const fileSize = file.buffer.length;
-    if (fileSize === 0 || fileSize > MAX_AVATAR_FILE_SIZE) {
-      throw new UnprocessableEntityException(
-        'Avatar must contain 1 byte to 2 MiB',
-      );
+    if (fileSize > MAX_AVATAR_FILE_SIZE) {
+      throw new PayloadTooLargeException('Avatar exceeds 2 MiB');
     }
     const fileType = detectAvatarType(file.buffer);
     const id = randomUUID();
