@@ -1,5 +1,6 @@
 import {join} from 'node:path';
 import {PostgresConnectionOptions} from 'typeorm/driver/postgres/PostgresConnectionOptions';
+import {Attachment} from '../attachments/attachment.entity';
 import {Follow} from '../users/entities/follow.entity';
 import {User} from '../users/entities/user.entity';
 import {EnvironmentError} from '../config/environment';
@@ -13,7 +14,7 @@ export function databaseOptions(url: string): PostgresConnectionOptions {
   return {
     type: 'postgres',
     url,
-    entities: [User, Follow],
+    entities: [User, Follow, Attachment],
     migrations: [
       join(
         __dirname,

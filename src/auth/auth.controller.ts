@@ -7,19 +7,25 @@ import {
   Post,
   Put,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import {FileInterceptor} from '@nestjs/platform-express';
 import {
   ApiCreatedResponse,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiPayloadTooLargeResponse,
   ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import {ThrottlerGuard} from '@nestjs/throttler';
+import {MAX_AVATAR_FILE_SIZE} from '../attachments/attachments.service';
+import type {User} from '../users/entities/user.entity';
 import {
   AuthResponseDto,
   LoginUserRequestDto,
@@ -28,7 +34,9 @@ import {
 } from './auth.dto';
 import {AuthService} from './auth.service';
 import {AuthenticatedRequest} from './auth.types';
+import {CurrentUser} from './current-user.decorator';
 import {JwtAuthGuard} from './jwt-auth.guard';
+import {UpdateUserBodyInterceptor} from './update-user-body.interceptor';
 
 @ApiTags('authentication')
 @Controller()
@@ -69,20 +77,28 @@ export class AuthController {
   }
 
   @Put('user')
-  @Header('Cache-Control', 'no-store')
   @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileInterceptor('avatar', {
+      limits: {fileSize: MAX_AVATAR_FILE_SIZE + 1, files: 1, fields: 1},
+    }),
+    UpdateUserBodyInterceptor,
+  )
   @ApiSecurity('token')
-  @ApiOperation({summary: 'Update the current user'})
+  @ApiOperation({summary: 'Update the current user or upload an avatar'})
   @ApiOkResponse({type: AuthResponseDto})
   @ApiUnauthorizedResponse({description: 'Authentication required'})
+  @ApiPayloadTooLargeResponse({description: 'Avatar exceeds 2 MiB'})
   @ApiUnprocessableEntityResponse({
     description: 'Invalid input or duplicate username/email',
   })
   update(
+    @CurrentUser() user: User,
     @Req() request: AuthenticatedRequest,
     @Body() body: UpdateUserRequestDto,
+    @UploadedFile() avatar?: {buffer: Buffer; size: number},
   ): Promise<AuthResponseDto> {
-    return this.auth.update(request.user, request.authToken, body.user);
+    return this.auth.update(user, request.authToken, body.user, avatar);
   }
 
   @Post('users/logout')
