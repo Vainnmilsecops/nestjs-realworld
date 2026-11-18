@@ -1,11 +1,25 @@
 import {
   CallHandler,
+  createParamDecorator,
   ExecutionContext,
   Injectable,
   NestInterceptor,
   UnprocessableEntityException,
+  ValidationPipe,
 } from '@nestjs/common';
 import type {Request} from 'express';
+import {VALIDATION_OPTIONS} from '../common/validation-options';
+
+const extractUpdateUserBody = createParamDecorator(
+  (_data: unknown, context: ExecutionContext): unknown =>
+    context.switchToHttp().getRequest<Request>().body,
+);
+
+export function UpdateUserBody(): ParameterDecorator {
+  return extractUpdateUserBody(
+    new ValidationPipe({...VALIDATION_OPTIONS, validateCustomDecorators: true}),
+  );
+}
 
 @Injectable()
 export class UpdateUserBodyInterceptor implements NestInterceptor {

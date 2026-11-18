@@ -4,6 +4,7 @@ import {DocumentBuilder, SwaggerModule} from '@nestjs/swagger';
 import helmet from 'helmet';
 import {NextFunction, Request, Response} from 'express';
 import {ApiExceptionFilter} from '../common/api-exception.filter';
+import {VALIDATION_OPTIONS} from '../common/validation-options';
 
 export function configureApplication(app: INestApplication): void {
   const config = app.get(ConfigService);
@@ -25,14 +26,7 @@ export function configureApplication(app: INestApplication): void {
     next();
   });
   app.useGlobalFilters(new ApiExceptionFilter());
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      errorHttpStatusCode: 422,
-    }),
-  );
+  app.useGlobalPipes(new ValidationPipe(VALIDATION_OPTIONS));
   const options = new DocumentBuilder()
     .setTitle('RealWorld Training API')
     .setDescription(
@@ -49,23 +43,9 @@ export function configureApplication(app: INestApplication): void {
       'token',
     )
     .build();
-  const document = SwaggerModule.createDocument(app, options);
-  const updateUser = document.paths['/api/user']?.put;
-  if (updateUser?.requestBody && 'content' in updateUser.requestBody) {
-    updateUser.requestBody.content['multipart/form-data'] = {
-      schema: {
-        type: 'object',
-        properties: {
-          avatar: {type: 'string', format: 'binary'},
-          user: {
-            type: 'string',
-            description: 'Optional JSON object containing account fields',
-            example: '{"bio":"I write tutorials."}',
-          },
-        },
-        anyOf: [{required: ['avatar']}, {required: ['user']}],
-      },
-    };
-  }
-  SwaggerModule.setup('api/docs', app, document);
+  SwaggerModule.setup(
+    'api/docs',
+    app,
+    SwaggerModule.createDocument(app, options),
+  );
 }

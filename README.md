@@ -46,7 +46,7 @@ Validation envelope trả `422`; token sai/hết hạn/đã thu hồi hoặc sai
 - `GET /api/profiles/:username` trả hồ sơ công khai. Gửi token để biết tài khoản hiện tại có đang theo dõi hồ sơ đó hay không.
 - `POST /api/profiles/:username/follow` và `DELETE /api/profiles/:username/follow` cần token và trả hồ sơ với trạng thái `following` sau thao tác.
 - Để upload, gửi `PUT /api/user` dạng `multipart/form-data` với trường file `avatar`. Có thể gửi kèm trường text `user` chứa JSON, ví dụ `{"bio":"Tôi viết hướng dẫn."}`. API nhận JPEG, PNG hoặc WebP tối đa 2 MiB.
-- Sau khi upload, `user.image` là đường dẫn `/api/attachments/<uuid>`. Chủ tài khoản gửi token khi tải ảnh qua đường dẫn này. File lưu trong `.local/uploads` theo mặc định hoặc theo `AVATAR_UPLOAD_DIR`.
+- Sau khi upload, `user.image` là đường dẫn `/api/attachments/<uuid>`. Chủ tài khoản gửi token khi tải ảnh qua đường dẫn này. Hồ sơ trả ảnh upload cho chính chủ và trả `image: null` cho khách hoặc tài khoản khác. URL ảnh HTTP(S) bên ngoài vẫn hiển thị trong hồ sơ công khai. File lưu trong `.local/uploads` theo mặc định hoặc theo `AVATAR_UPLOAD_DIR`.
 
 ## Cấu hình
 

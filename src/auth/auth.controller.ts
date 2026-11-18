@@ -14,6 +14,7 @@ import {
 import {FileInterceptor} from '@nestjs/platform-express';
 import {
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
@@ -22,6 +23,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import {ThrottlerGuard} from '@nestjs/throttler';
 import {MAX_AVATAR_FILE_SIZE} from '../attachments/attachments.service';
@@ -36,7 +38,10 @@ import {AuthService} from './auth.service';
 import {AuthenticatedRequest} from './auth.types';
 import {CurrentUser} from './current-user.decorator';
 import {JwtAuthGuard} from './jwt-auth.guard';
-import {UpdateUserBodyInterceptor} from './update-user-body.interceptor';
+import {
+  UpdateUserBody,
+  UpdateUserBodyInterceptor,
+} from './update-user-body.interceptor';
 
 @ApiTags('authentication')
 @Controller()
@@ -85,7 +90,32 @@ export class AuthController {
     UpdateUserBodyInterceptor,
   )
   @ApiSecurity('token')
-  @ApiOperation({summary: 'Update the current user or upload an avatar'})
+  @ApiExtraModels(UpdateUserRequestDto)
+  @ApiOperation({
+    summary: 'Update the current user or upload an avatar',
+    requestBody: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: {$ref: getSchemaPath(UpdateUserRequestDto)},
+        },
+        'multipart/form-data': {
+          schema: {
+            type: 'object',
+            properties: {
+              avatar: {type: 'string', format: 'binary'},
+              user: {
+                type: 'string',
+                description: 'Optional JSON object containing account fields',
+                example: '{"bio":"I write tutorials."}',
+              },
+            },
+            anyOf: [{required: ['avatar']}, {required: ['user']}],
+          },
+        },
+      },
+    },
+  })
   @ApiOkResponse({type: AuthResponseDto})
   @ApiUnauthorizedResponse({description: 'Authentication required'})
   @ApiPayloadTooLargeResponse({description: 'Avatar exceeds 2 MiB'})
@@ -95,7 +125,7 @@ export class AuthController {
   update(
     @CurrentUser() user: User,
     @Req() request: AuthenticatedRequest,
-    @Body() body: UpdateUserRequestDto,
+    @UpdateUserBody() body: UpdateUserRequestDto,
     @UploadedFile() avatar?: {buffer: Buffer; size: number},
   ): Promise<AuthResponseDto> {
     return this.auth.update(user, request.authToken, body.user, avatar);

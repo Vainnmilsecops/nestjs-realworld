@@ -673,6 +673,26 @@ describe(
       const id = image.slice(attachmentPrefix.length);
       assert.match(id, uuidPattern);
       assert.deepEqual(uploaded.body, {user: {...owner, bio, image}});
+      const profilePath = `/api/profiles/${owner.username}`;
+      const guestProfile = await request(server()).get(profilePath).expect(200);
+      assert.equal(guestProfile.body.profile.image, null);
+      const otherProfile = await request(server())
+        .get(profilePath)
+        .set('Authorization', `Token ${other.token}`)
+        .expect(200);
+      assert.equal(otherProfile.body.profile.image, null);
+      const ownProfile = await request(server())
+        .get(profilePath)
+        .set('Authorization', authorization)
+        .expect(200);
+      assert.equal(ownProfile.body.profile.image, image);
+      for (const method of ['post', 'delete'] as const) {
+        const changedProfile = await request(server())
+          [method](`${profilePath}/follow`)
+          .set('Authorization', `Token ${other.token}`)
+          .expect(200);
+        assert.equal(changedProfile.body.profile.image, null);
+      }
       const rows = await database.query(
         'SELECT owner_type, owner_id, url, file_name, file_type, file_size FROM public.attachments WHERE id = $1',
         [id],
@@ -766,6 +786,33 @@ describe(
         [],
       );
       assert.deepEqual(await readdir(avatarDirectory), []);
+    });
+
+    it('documents JSON and multipart user updates with separate request schemas', async () => {
+      const response = await request(server())
+        .get('/api/docs-json')
+        .expect(200);
+      const requestBody = response.body.paths['/api/user'].put.requestBody;
+      assert.equal(requestBody.required, true);
+      assert.deepEqual(requestBody.content['application/json'].schema, {
+        $ref: '#/components/schemas/UpdateUserRequestDto',
+      });
+      const json = response.body.components.schemas.UpdateUserRequestDto;
+      assert.deepEqual(json.required, ['user']);
+      assert.equal(
+        json.properties.user.$ref,
+        '#/components/schemas/UpdateUserDto',
+      );
+      const multipart = requestBody.content['multipart/form-data'].schema;
+      assert.deepEqual(multipart.properties.avatar, {
+        type: 'string',
+        format: 'binary',
+      });
+      assert.equal(multipart.properties.user.type, 'string');
+      assert.deepEqual(multipart.anyOf, [
+        {required: ['avatar']},
+        {required: ['user']},
+      ]);
     });
 
     it('rejects invalid avatar bytes and malformed multipart user JSON without saving an attachment', async () => {
