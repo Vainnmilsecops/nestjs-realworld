@@ -91,7 +91,7 @@ describe('Articles with PostgreSQL and Redis', {concurrency: false}, () => {
     assert.equal(database.options.type, 'postgres');
     assert.equal((database.options as {url?: string}).url, expectedDatabaseUrl);
     await database.query(
-      'TRUNCATE TABLE public.articles, public.attachments, public.follows, public.users',
+      'TRUNCATE TABLE public.article_favorites, public.articles, public.attachments, public.follows, public.users',
     );
   }
 
@@ -324,5 +324,243 @@ describe('Articles with PostgreSQL and Redis', {concurrency: false}, () => {
     }
     const current = await api().get(detailPath(created.slug)).expect(200);
     assert.deepEqual(current.body, {article: created});
+  });
+
+  it('feeds followed authors in newest-first pages with a full total and no article body', async () => {
+    assert.ok(database);
+    const author = await register();
+    const outsider = await register();
+    const viewer = await register();
+    const older = await publish(author, {title: 'Older followed article'});
+    const newer = await publish(author, {title: 'Newer followed article'});
+    await publish(outsider, {title: 'Unfollowed author'});
+    for (const [article, createdAt] of [
+      [older, '2020-01-01T00:00:00.000Z'],
+      [newer, '2020-01-02T00:00:00.000Z'],
+    ] as const) {
+      await database.query(
+        'UPDATE public.articles SET created_at = $1 WHERE slug = $2',
+        [createdAt, article.slug],
+      );
+      article.createdAt = createdAt;
+    }
+    const feedPath = `${articlePath}/feed`;
+    const authorization = `Token ${viewer.token}`;
+    await api().get(feedPath).expect(401);
+    await api().get(feedPath).set('Authorization', 'Token invalid').expect(401);
+    const empty = await api()
+      .get(feedPath)
+      .set('Authorization', authorization)
+      .expect(200);
+    assert.deepEqual(empty.body, {articles: [], articlesCount: 0});
+    await api()
+      .post(`/api/profiles/${author.username}/follow`)
+      .set('Authorization', authorization)
+      .expect(200);
+    await api()
+      .post(`${detailPath(newer.slug)}/favorite`)
+      .set('Authorization', authorization)
+      .expect(200);
+    const expected = [newer, older].map((article) => ({
+      ...summary(article),
+      favorited: article.slug === newer.slug,
+      favoritesCount: article.slug === newer.slug ? 1 : 0,
+      author: {...article.author, following: true},
+    }));
+    const feed = await api()
+      .get(feedPath)
+      .set('Authorization', authorization)
+      .expect(200);
+    assert.deepEqual(feed.body, {articles: expected, articlesCount: 2});
+    const page = await api()
+      .get(feedPath)
+      .set('Authorization', authorization)
+      .query({limit: 1, offset: 1})
+      .expect(200);
+    assert.deepEqual(page.body, {
+      articles: expected.slice(1),
+      articlesCount: 2,
+    });
+    await api()
+      .get(feedPath)
+      .set('Authorization', authorization)
+      .query({limit: 101})
+      .expect(422);
+  });
+
+  it('combines favorited, tag and author filters and keeps aggregate counts independent of the viewer', async () => {
+    assert.ok(database);
+    const author = await register();
+    const viewer = await register();
+    const older = await publish(author, {title: 'First favorite'});
+    const newer = await publish(author, {title: 'Second favorite'});
+    await publish(viewer, {title: 'Unrelated article', tagList: ['database']});
+    for (const [article, createdAt] of [
+      [older, '2020-01-01T00:00:00.000Z'],
+      [newer, '2020-01-02T00:00:00.000Z'],
+    ] as const) {
+      await database.query(
+        'UPDATE public.articles SET created_at = $1 WHERE slug = $2',
+        [createdAt, article.slug],
+      );
+      article.createdAt = createdAt;
+      await api()
+        .post(`${detailPath(article.slug)}/favorite`)
+        .set('Authorization', `Token ${viewer.token}`)
+        .expect(200);
+    }
+    await api()
+      .post(`${detailPath(newer.slug)}/favorite`)
+      .set('Authorization', `Token ${author.token}`)
+      .expect(200);
+    const filter = {
+      favorited: viewer.username,
+      tag: 'nestjs',
+      author: author.username,
+    };
+    const expected = [newer, older].map((article) => ({
+      ...summary(article),
+      favoritesCount: article.slug === newer.slug ? 2 : 1,
+    }));
+    const guest = await api().get(articlePath).query(filter).expect(200);
+    assert.deepEqual(guest.body, {articles: expected, articlesCount: 2});
+    const page = await api()
+      .get(articlePath)
+      .query({...filter, limit: 1, offset: 1})
+      .set('Authorization', `Token ${viewer.token}`)
+      .expect(200);
+    assert.deepEqual(page.body, {
+      articles: [{...expected[1], favorited: true}],
+      articlesCount: 2,
+    });
+    const otherViewer = await api()
+      .get(articlePath)
+      .query(filter)
+      .set('Authorization', `Token ${author.token}`)
+      .expect(200);
+    assert.deepEqual(otherViewer.body, {
+      articles: expected.map((article) => ({
+        ...article,
+        favorited: article.slug === newer.slug,
+      })),
+      articlesCount: 2,
+    });
+    for (const query of [
+      {...filter, tag: 'missing-tag'},
+      {...filter, author: viewer.username},
+      {favorited: `missing_${randomUUID()}`},
+    ]) {
+      const empty = await api().get(articlePath).query(query).expect(200);
+      assert.deepEqual(empty.body, {articles: [], articlesCount: 0});
+    }
+  });
+
+  it('favorites and unfavorites idempotently, enforces authentication and cascades favorites on deletion', async () => {
+    assert.ok(database);
+    const author = await register();
+    const viewer = await register();
+    const article = await publish(author);
+    const path = `${detailPath(article.slug)}/favorite`;
+    const authorization = `Token ${viewer.token}`;
+    for (const method of ['post', 'delete'] as const) {
+      await api()[method](path).expect(401);
+      await api()
+        [method](path)
+        .set('Authorization', 'Token invalid')
+        .expect(401);
+      await api()
+        [method](`${detailPath('missing-article')}/favorite`)
+        .set('Authorization', authorization)
+        .expect(404);
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const favorited = await api()
+        .post(path)
+        .set('Authorization', authorization)
+        .expect(200);
+      assert.deepEqual(favorited.body, {
+        article: {...article, favorited: true, favoritesCount: 1},
+      });
+    }
+    const secondFavorite = await api()
+      .post(path)
+      .set('Authorization', `Token ${author.token}`)
+      .expect(200);
+    assert.equal(secondFavorite.body.article.favoritesCount, 2);
+    const description = 'Edited while favorited';
+    const edited = await api()
+      .put(detailPath(article.slug))
+      .set('Authorization', `Token ${author.token}`)
+      .send({article: {description}})
+      .expect(200);
+    assert.equal(edited.body.article.favorited, true);
+    assert.equal(edited.body.article.favoritesCount, 2);
+    article.description = description;
+    article.updatedAt = edited.body.article.updatedAt;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const unfavorited = await api()
+        .delete(path)
+        .set('Authorization', authorization)
+        .expect(200);
+      assert.deepEqual(unfavorited.body, {
+        article: {...article, favoritesCount: 1},
+      });
+    }
+    const ownerDetail = await api()
+      .get(detailPath(article.slug))
+      .set('Authorization', `Token ${author.token}`)
+      .expect(200);
+    assert.equal(ownerDetail.body.article.favorited, true);
+    assert.equal(ownerDetail.body.article.favoritesCount, 1);
+    await api()
+      .delete(detailPath(article.slug))
+      .set('Authorization', `Token ${author.token}`)
+      .expect(204);
+    const remaining = await database.query(
+      'SELECT COUNT(*)::int AS count FROM public.article_favorites',
+    );
+    assert.deepEqual(remaining, [{count: 0}]);
+  });
+
+  it('exposes a private author avatar only to its owner across article responses', async () => {
+    assert.ok(database);
+    const author = await register();
+    const viewer = await register();
+    const image = `/api/attachments/${randomUUID()}`;
+    await database.query(
+      'UPDATE public.users SET image = $1 WHERE username = $2',
+      [image, author.username],
+    );
+    const article = await publish(author);
+    assert.equal(article.author.image, image);
+    const path = detailPath(article.slug);
+    const guest = await api().get(path).expect(200);
+    assert.equal(guest.body.article.author.image, null);
+    const owner = await api()
+      .get(path)
+      .set('Authorization', `Token ${author.token}`)
+      .expect(200);
+    assert.equal(owner.body.article.author.image, image);
+    const outsider = await api()
+      .get(path)
+      .set('Authorization', `Token ${viewer.token}`)
+      .expect(200);
+    assert.equal(outsider.body.article.author.image, null);
+    const guestList = await api().get(articlePath).expect(200);
+    assert.equal(guestList.body.articles[0].author.image, null);
+    await api()
+      .post(`/api/profiles/${author.username}/follow`)
+      .set('Authorization', `Token ${viewer.token}`)
+      .expect(200);
+    const feed = await api()
+      .get(`${articlePath}/feed`)
+      .set('Authorization', `Token ${viewer.token}`)
+      .expect(200);
+    assert.equal(feed.body.articles[0].author.image, null);
+    const favorite = await api()
+      .post(`${path}/favorite`)
+      .set('Authorization', `Token ${viewer.token}`)
+      .expect(200);
+    assert.equal(favorite.body.article.author.image, null);
   });
 });

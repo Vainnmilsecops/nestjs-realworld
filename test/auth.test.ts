@@ -142,7 +142,7 @@ describe(
       assert.equal(database.options.type, 'postgres');
       assert.equal((database.options as {url?: string}).url, databaseUrl);
       await database.query(
-        'TRUNCATE TABLE public.articles, public.attachments, public.follows, public.users',
+        'TRUNCATE TABLE public.article_favorites, public.articles, public.attachments, public.follows, public.users',
       );
     }
 

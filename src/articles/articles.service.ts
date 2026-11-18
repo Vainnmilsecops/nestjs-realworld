@@ -5,20 +5,28 @@ import {
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {randomUUID} from 'node:crypto';
-import {In, Repository} from 'typeorm';
+import {EntityManager, In, Repository, SelectQueryBuilder} from 'typeorm';
 import {Follow} from '../users/entities/follow.entity';
 import {User} from '../users/entities/user.entity';
+import {profileImage} from '../users/profile-image';
 import {Article} from './article.entity';
+import {ArticleFavorite} from './article-favorite.entity';
 import {
   ArticleInputDto,
   ArticleListResponseDto,
   ArticleQueryDto,
   ArticleResponseDto,
   ArticleSummaryDto,
+  PaginationQueryDto,
   UpdateArticleDto,
 } from './articles.dto';
 
 const MAX_SLUG_STEM_LENGTH = 200;
+
+interface ArticleStats {
+  followedAuthorIds: Set<string>;
+  favorites: Map<string, {count: number; favorited: boolean}>;
+}
 
 function articleSlug(title: string): string {
   const normalized = title
@@ -37,7 +45,6 @@ function articleSlug(title: string): string {
 export class ArticlesService {
   constructor(
     @InjectRepository(Article) private readonly articles: Repository<Article>,
-    @InjectRepository(Follow) private readonly follows: Repository<Follow>,
   ) {}
 
   async create(
@@ -55,7 +62,7 @@ export class ArticlesService {
         author,
       }),
     );
-    return this.articleResponse(article, false);
+    return this.articleResponse(article, author.id);
   }
 
   async list(
@@ -73,16 +80,51 @@ export class ArticlesService {
         username: query.author,
       });
     }
-    const [articles, articlesCount] = await articlesQuery
+    if (query.favorited !== undefined) {
+      articlesQuery
+        .innerJoin(
+          ArticleFavorite,
+          'filteredFavorite',
+          'filteredFavorite.articleId = article.id',
+        )
+        .innerJoin(
+          User,
+          'favoritingUser',
+          'favoritingUser.id = filteredFavorite.userId AND favoritingUser.username = :favorited',
+          {favorited: query.favorited},
+        );
+    }
+    return this.listArticles(articlesQuery, query, viewerId);
+  }
+
+  async feed(
+    query: PaginationQueryDto,
+    viewerId: string,
+  ): Promise<ArticleListResponseDto> {
+    const articlesQuery = this.articleQuery().innerJoin(
+      Follow,
+      'feedFollow',
+      'feedFollow.followingId = article.authorId AND feedFollow.followerId = :viewerId',
+      {viewerId},
+    );
+    return this.listArticles(articlesQuery, query, viewerId);
+  }
+
+  private async listArticles(
+    query: SelectQueryBuilder<Article>,
+    pagination: PaginationQueryDto,
+    viewerId?: string,
+  ): Promise<ArticleListResponseDto> {
+    const [articles, articlesCount] = await query
       .orderBy('article.createdAt', 'DESC')
       .addOrderBy('article.id', 'DESC')
-      .limit(query.limit)
-      .offset(query.offset)
+      .limit(pagination.limit)
+      .offset(pagination.offset)
       .getManyAndCount();
-    const following = await this.followedAuthors(articles, viewerId);
+    const stats = await this.articleStats(articles, viewerId);
     return {
       articles: articles.map((article) =>
-        this.articleSummary(article, following.has(article.authorId)),
+        this.articleSummary(article, stats, viewerId),
       ),
       articlesCount,
     };
@@ -94,8 +136,7 @@ export class ArticlesService {
       .where('article.slug = :slug', {slug})
       .getOne();
     if (!article) throw new NotFoundException('Article not found');
-    const following = await this.followedAuthors([article], viewerId);
-    return this.articleResponse(article, following.has(article.authorId));
+    return this.articleResponse(article, viewerId);
   }
 
   async update(
@@ -113,7 +154,11 @@ export class ArticlesService {
       if (input.description !== undefined)
         article.description = input.description;
       if (input.body !== undefined) article.body = input.body;
-      return this.articleResponse(await articles.save(article), false);
+      return this.articleResponse(
+        await articles.save(article),
+        authorId,
+        manager,
+      );
     });
   }
 
@@ -122,6 +167,39 @@ export class ArticlesService {
       const articles = manager.getRepository(Article);
       const article = await this.lockOwnedArticle(articles, slug, authorId);
       await articles.delete({id: article.id, authorId});
+    });
+  }
+
+  async favorite(slug: string, viewerId: string): Promise<ArticleResponseDto> {
+    return this.articles.manager.transaction(async (manager) => {
+      const article = await this.lockArticle(
+        manager.getRepository(Article),
+        slug,
+      );
+      await manager
+        .getRepository(ArticleFavorite)
+        .createQueryBuilder()
+        .insert()
+        .values({articleId: article.id, userId: viewerId})
+        .orIgnore()
+        .execute();
+      return this.articleResponse(article, viewerId, manager);
+    });
+  }
+
+  async unfavorite(
+    slug: string,
+    viewerId: string,
+  ): Promise<ArticleResponseDto> {
+    return this.articles.manager.transaction(async (manager) => {
+      const article = await this.lockArticle(
+        manager.getRepository(Article),
+        slug,
+      );
+      await manager
+        .getRepository(ArticleFavorite)
+        .delete({articleId: article.id, userId: viewerId});
+      return this.articleResponse(article, viewerId, manager);
     });
   }
 
@@ -150,35 +228,82 @@ export class ArticlesService {
     slug: string,
     authorId: string,
   ): Promise<Article> {
-    const article = await this.articleQuery(repository)
-      .addSelect('article.body')
-      .where('article.slug = :slug', {slug})
-      .setLock('pessimistic_write', undefined, ['article'])
-      .getOne();
-    if (!article) throw new NotFoundException('Article not found');
+    const article = await this.lockArticle(repository, slug);
     if (article.authorId !== authorId) {
       throw new ForbiddenException('Only the author can modify this article');
     }
     return article;
   }
 
-  private async followedAuthors(
+  private async lockArticle(
+    repository: Repository<Article>,
+    slug: string,
+  ): Promise<Article> {
+    const article = await this.articleQuery(repository)
+      .addSelect('article.body')
+      .where('article.slug = :slug', {slug})
+      .setLock('pessimistic_write', undefined, ['article'])
+      .getOne();
+    if (!article) throw new NotFoundException('Article not found');
+    return article;
+  }
+
+  private async articleStats(
     articles: Article[],
     viewerId?: string,
-  ): Promise<Set<string>> {
-    if (viewerId === undefined || articles.length === 0) return new Set();
+    manager = this.articles.manager,
+  ): Promise<ArticleStats> {
+    if (articles.length === 0) {
+      return {followedAuthorIds: new Set(), favorites: new Map()};
+    }
     const authorIds = [...new Set(articles.map((article) => article.authorId))];
-    const follows = await this.follows.find({
-      where: {followerId: viewerId, followingId: In(authorIds)},
-      select: {followingId: true},
-    });
-    return new Set(follows.map((follow) => follow.followingId));
+    const [follows, favorites] = await Promise.all([
+      viewerId === undefined
+        ? []
+        : manager.getRepository(Follow).find({
+            where: {followerId: viewerId, followingId: In(authorIds)},
+            select: {followingId: true},
+          }),
+      manager
+        .getRepository(ArticleFavorite)
+        .createQueryBuilder('favorite')
+        .select('favorite.articleId', 'articleId')
+        .addSelect('COUNT(*)', 'favoritesCount')
+        .addSelect('BOOL_OR(favorite.userId = :viewerId)', 'favorited')
+        .where('favorite.articleId IN (:...articleIds)', {
+          articleIds: articles.map((article) => article.id),
+        })
+        .setParameter('viewerId', viewerId ?? null)
+        .groupBy('favorite.articleId')
+        .getRawMany<{
+          articleId: string;
+          favoritesCount: string;
+          favorited: boolean | null;
+        }>(),
+    ]);
+    const followedAuthorIds = new Set(
+      follows.map((follow) => follow.followingId),
+    );
+    return {
+      followedAuthorIds,
+      favorites: new Map(
+        favorites.map((favorite) => [
+          favorite.articleId,
+          {
+            count: Number(favorite.favoritesCount),
+            favorited: favorite.favorited ?? false,
+          },
+        ]),
+      ),
+    };
   }
 
   private articleSummary(
     article: Article,
-    following: boolean,
+    stats: ArticleStats,
+    viewerId?: string,
   ): ArticleSummaryDto {
+    const favorite = stats.favorites.get(article.id);
     return {
       slug: article.slug,
       title: article.title,
@@ -186,23 +311,28 @@ export class ArticlesService {
       tagList: article.tagList,
       createdAt: article.createdAt.toISOString(),
       updatedAt: article.updatedAt.toISOString(),
-      favorited: false,
-      favoritesCount: 0,
+      favorited: favorite?.favorited ?? false,
+      favoritesCount: favorite?.count ?? 0,
       author: {
         username: article.author.username,
         bio: article.author.bio,
-        image: article.author.image,
-        following,
+        image: profileImage(article.author, viewerId),
+        following: stats.followedAuthorIds.has(article.authorId),
       },
     };
   }
 
-  private articleResponse(
+  private async articleResponse(
     article: Article,
-    following: boolean,
-  ): ArticleResponseDto {
+    viewerId?: string,
+    manager?: EntityManager,
+  ): Promise<ArticleResponseDto> {
+    const stats = await this.articleStats([article], viewerId, manager);
     return {
-      article: {...this.articleSummary(article, following), body: article.body},
+      article: {
+        ...this.articleSummary(article, stats, viewerId),
+        body: article.body,
+      },
     };
   }
 }

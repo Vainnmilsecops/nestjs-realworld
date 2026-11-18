@@ -31,6 +31,7 @@ import {
   ArticleQueryDto,
   ArticleResponseDto,
   CreateArticleRequestDto,
+  PaginationQueryDto,
   UpdateArticleRequestDto,
 } from './articles.dto';
 import {ArticlesService} from './articles.service';
@@ -66,6 +67,19 @@ export class ArticlesController {
     @CurrentUser() viewer: User | undefined,
   ): Promise<ArticleListResponseDto> {
     return this.articles.list(query, viewer?.id);
+  }
+
+  @Get('feed')
+  @UseGuards(JwtAuthGuard)
+  @ApiSecurity('token')
+  @ApiOkResponse({type: ArticleListResponseDto})
+  @ApiUnauthorizedResponse({description: 'A valid token is required'})
+  @ApiUnprocessableEntityResponse({description: 'Invalid pagination'})
+  feed(
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: User,
+  ): Promise<ArticleListResponseDto> {
+    return this.articles.feed(query, user.id);
   }
 
   @Get(':slug')
@@ -110,5 +124,32 @@ export class ArticlesController {
     @CurrentUser() user: User,
   ): Promise<void> {
     return this.articles.remove(slug, user.id);
+  }
+
+  @Post(':slug/favorite')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiSecurity('token')
+  @ApiOkResponse({type: ArticleResponseDto})
+  @ApiUnauthorizedResponse({description: 'A valid token is required'})
+  @ApiNotFoundResponse({description: 'Article not found'})
+  favorite(
+    @Param('slug') slug: string,
+    @CurrentUser() user: User,
+  ): Promise<ArticleResponseDto> {
+    return this.articles.favorite(slug, user.id);
+  }
+
+  @Delete(':slug/favorite')
+  @UseGuards(JwtAuthGuard)
+  @ApiSecurity('token')
+  @ApiOkResponse({type: ArticleResponseDto})
+  @ApiUnauthorizedResponse({description: 'A valid token is required'})
+  @ApiNotFoundResponse({description: 'Article not found'})
+  unfavorite(
+    @Param('slug') slug: string,
+    @CurrentUser() user: User,
+  ): Promise<ArticleResponseDto> {
+    return this.articles.unfavorite(slug, user.id);
   }
 }

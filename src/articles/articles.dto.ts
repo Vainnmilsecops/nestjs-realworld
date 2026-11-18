@@ -146,6 +146,15 @@ export class ArticleQueryDto extends PaginationQueryDto {
   @MaxLength(50)
   @NotContains('\u0000')
   author?: string;
+
+  @ApiPropertyOptional({example: 'trainee_01', maxLength: 50})
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @Transform(({value}: {value: unknown}) => trimString(value))
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(50)
+  @NotContains('\u0000')
+  favorited?: string;
 }
 
 export class ArticleSummaryDto {
