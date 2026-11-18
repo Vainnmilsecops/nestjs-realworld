@@ -5,28 +5,43 @@ import {
   Header,
   HttpCode,
   Post,
+  Put,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import {FileInterceptor} from '@nestjs/platform-express';
 import {
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiPayloadTooLargeResponse,
   ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import {ThrottlerGuard} from '@nestjs/throttler';
+import {MAX_AVATAR_FILE_SIZE} from '../attachments/attachments.service';
+import type {User} from '../users/entities/user.entity';
 import {
   AuthResponseDto,
   LoginUserRequestDto,
   RegisterUserRequestDto,
+  UpdateUserRequestDto,
 } from './auth.dto';
 import {AuthService} from './auth.service';
 import {AuthenticatedRequest} from './auth.types';
+import {CurrentUser} from './current-user.decorator';
 import {JwtAuthGuard} from './jwt-auth.guard';
+import {
+  UpdateUserBody,
+  UpdateUserBodyInterceptor,
+} from './update-user-body.interceptor';
 
 @ApiTags('authentication')
 @Controller()
@@ -64,6 +79,56 @@ export class AuthController {
   @ApiOkResponse({type: AuthResponseDto})
   current(@Req() request: AuthenticatedRequest): AuthResponseDto {
     return this.auth.current(request.user, request.authToken);
+  }
+
+  @Put('user')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileInterceptor('avatar', {
+      limits: {fileSize: MAX_AVATAR_FILE_SIZE + 1, files: 1, fields: 1},
+    }),
+    UpdateUserBodyInterceptor,
+  )
+  @ApiSecurity('token')
+  @ApiExtraModels(UpdateUserRequestDto)
+  @ApiOperation({
+    summary: 'Update the current user or upload an avatar',
+    requestBody: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: {$ref: getSchemaPath(UpdateUserRequestDto)},
+        },
+        'multipart/form-data': {
+          schema: {
+            type: 'object',
+            properties: {
+              avatar: {type: 'string', format: 'binary'},
+              user: {
+                type: 'string',
+                description: 'Optional JSON object containing account fields',
+                example: '{"bio":"I write tutorials."}',
+              },
+            },
+            anyOf: [{required: ['avatar']}, {required: ['user']}],
+          },
+        },
+      },
+    },
+  })
+  @ApiOkResponse({type: AuthResponseDto})
+  @ApiUnauthorizedResponse({description: 'Authentication required'})
+  @ApiPayloadTooLargeResponse({description: 'Avatar exceeds 2 MiB'})
+  @ApiUnprocessableEntityResponse({
+    description: 'Invalid input or duplicate username/email',
+  })
+  update(
+    @CurrentUser() user: User,
+    @Req() request: AuthenticatedRequest,
+    @UpdateUserBody() body: UpdateUserRequestDto,
+    @UploadedFile() avatar?: {buffer: Buffer; size: number},
+  ): Promise<AuthResponseDto> {
+    return this.auth.update(user, request.authToken, body.user, avatar);
   }
 
   @Post('users/logout')

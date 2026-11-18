@@ -4,6 +4,7 @@ import {DocumentBuilder, SwaggerModule} from '@nestjs/swagger';
 import helmet from 'helmet';
 import {NextFunction, Request, Response} from 'express';
 import {ApiExceptionFilter} from '../common/api-exception.filter';
+import {VALIDATION_OPTIONS} from '../common/validation-options';
 
 export function configureApplication(app: INestApplication): void {
   const config = app.get(ConfigService);
@@ -25,20 +26,13 @@ export function configureApplication(app: INestApplication): void {
     next();
   });
   app.useGlobalFilters(new ApiExceptionFilter());
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      errorHttpStatusCode: 422,
-    }),
-  );
+  app.useGlobalPipes(new ValidationPipe(VALIDATION_OPTIONS));
   const options = new DocumentBuilder()
     .setTitle('RealWorld Training API')
     .setDescription(
-      'Pull 2: PostgreSQL migrations and JWT authentication with Redis logout revocation.',
+      'RealWorld accounts, profiles, follows and private avatars.',
     )
-    .setVersion('0.2.0')
+    .setVersion('0.3.0')
     .addApiKey(
       {
         type: 'apiKey',

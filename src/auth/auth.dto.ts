@@ -1,10 +1,12 @@
-import {ApiProperty} from '@nestjs/swagger';
+import {ApiProperty, ApiPropertyOptional, PartialType} from '@nestjs/swagger';
 import {Transform, Type} from 'class-transformer';
 import {
   IsDefined,
   IsEmail,
   IsObject,
+  IsOptional,
   IsString,
+  IsUrl,
   Length,
   Matches,
   ValidateNested,
@@ -75,6 +77,33 @@ export class LoginUserRequestDto {
   @ValidateNested()
   @Type(() => LoginUserDto)
   user!: LoginUserDto;
+}
+
+export class UpdateUserDto extends PartialType(RegisterUserDto, {
+  skipNullProperties: false,
+}) {
+  @ApiPropertyOptional({type: String, nullable: true})
+  @IsOptional()
+  @IsString()
+  bio?: string | null;
+
+  @ApiPropertyOptional({type: String, nullable: true, format: 'uri'})
+  @IsOptional()
+  @IsUrl({
+    protocols: ['http', 'https'],
+    require_protocol: true,
+    require_tld: false,
+  })
+  image?: string | null;
+}
+
+export class UpdateUserRequestDto {
+  @ApiProperty({type: UpdateUserDto})
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => UpdateUserDto)
+  user!: UpdateUserDto;
 }
 
 export class AuthUserDto {
