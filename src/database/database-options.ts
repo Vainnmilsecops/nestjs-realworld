@@ -3,6 +3,7 @@ import {PostgresConnectionOptions} from 'typeorm/driver/postgres/PostgresConnect
 import {Article} from '../articles/article.entity';
 import {ArticleFavorite} from '../articles/article-favorite.entity';
 import {Attachment} from '../attachments/attachment.entity';
+import {Comment} from '../comments/comment.entity';
 import {Follow} from '../users/entities/follow.entity';
 import {User} from '../users/entities/user.entity';
 import {EnvironmentError} from '../config/environment';
@@ -16,7 +17,7 @@ export function databaseOptions(url: string): PostgresConnectionOptions {
   return {
     type: 'postgres',
     url,
-    entities: [User, Follow, Attachment, Article, ArticleFavorite],
+    entities: [User, Follow, Attachment, Article, ArticleFavorite, Comment],
     migrations: [
       join(
         __dirname,
