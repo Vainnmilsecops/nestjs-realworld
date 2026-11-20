@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import {EMAIL_MAX_LENGTH, USERNAME_MAX_LENGTH} from '../user.constants';
 
 @Entity('users')
 @Index('UQ_users_username', ['username'], {unique: true})
@@ -14,10 +15,10 @@ export class User {
   @PrimaryGeneratedColumn('uuid', {primaryKeyConstraintName: 'PK_users_id'})
   id!: string;
 
-  @Column({type: 'varchar', length: 50})
+  @Column({type: 'varchar', length: USERNAME_MAX_LENGTH})
   username!: string;
 
-  @Column({type: 'varchar', length: 254})
+  @Column({type: 'varchar', length: EMAIL_MAX_LENGTH})
   email!: string;
 
   @Column({name: 'password_hash', type: 'varchar', select: false})
