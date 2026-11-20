@@ -522,6 +522,35 @@ describe('Articles with PostgreSQL and Redis', {concurrency: false}, () => {
     assert.deepEqual(remaining, [{count: 0}]);
   });
 
+  it('can favorite and unfavorite while another transaction holds a shared article lock', async () => {
+    assert.ok(database);
+    const author = await register();
+    const viewer = await register();
+    const article = await publish(author);
+    const path = `${detailPath(article.slug)}/favorite`;
+    const authorization = `Token ${viewer.token}`;
+
+    await database.transaction(async (manager) => {
+      await manager.query('SELECT id FROM articles WHERE slug = $1 FOR SHARE', [
+        article.slug,
+      ]);
+      const [added, removed] = await Promise.all([
+        api()
+          .post(path)
+          .set('Authorization', authorization)
+          .timeout(5000)
+          .expect(200),
+        api()
+          .delete(path)
+          .set('Authorization', authorization)
+          .timeout(5000)
+          .expect(200),
+      ]);
+      assert.equal(added.body.article.favorited, true);
+      assert.equal(removed.body.article.favorited, false);
+    });
+  });
+
   it('exposes a private author avatar only to its owner across article responses', async () => {
     assert.ok(database);
     const author = await register();

@@ -172,9 +172,10 @@ export class ArticlesService {
 
   async favorite(slug: string, viewerId: string): Promise<ArticleResponseDto> {
     return this.articles.manager.transaction(async (manager) => {
-      const article = await this.lockArticle(
-        manager.getRepository(Article),
+      const article = await this.lockArticleForFavorite(
+        manager,
         slug,
+        viewerId,
       );
       await manager
         .getRepository(ArticleFavorite)
@@ -192,15 +193,34 @@ export class ArticlesService {
     viewerId: string,
   ): Promise<ArticleResponseDto> {
     return this.articles.manager.transaction(async (manager) => {
-      const article = await this.lockArticle(
-        manager.getRepository(Article),
+      const article = await this.lockArticleForFavorite(
+        manager,
         slug,
+        viewerId,
       );
       await manager
         .getRepository(ArticleFavorite)
         .delete({articleId: article.id, userId: viewerId});
       return this.articleResponse(article, viewerId, manager);
     });
+  }
+
+  private async lockArticleForFavorite(
+    manager: EntityManager,
+    slug: string,
+    viewerId: string,
+  ): Promise<Article> {
+    const article = await this.lockArticle(
+      manager.getRepository(Article),
+      slug,
+      'pessimistic_read',
+    );
+    // Serialize this viewer's opposite actions even when no favorite row exists.
+    await manager.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      [`article-favorite:${article.id}:${viewerId}`],
+    );
+    return article;
   }
 
   private articleQuery(repository = this.articles) {
@@ -228,7 +248,11 @@ export class ArticlesService {
     slug: string,
     authorId: string,
   ): Promise<Article> {
-    const article = await this.lockArticle(repository, slug);
+    const article = await this.lockArticle(
+      repository,
+      slug,
+      'pessimistic_write',
+    );
     if (article.authorId !== authorId) {
       throw new ForbiddenException('Only the author can modify this article');
     }
@@ -238,11 +262,12 @@ export class ArticlesService {
   private async lockArticle(
     repository: Repository<Article>,
     slug: string,
+    mode: 'pessimistic_read' | 'pessimistic_write',
   ): Promise<Article> {
     const article = await this.articleQuery(repository)
       .addSelect('article.body')
       .where('article.slug = :slug', {slug})
-      .setLock('pessimistic_write', undefined, ['article'])
+      .setLock(mode, undefined, ['article'])
       .getOne();
     if (!article) throw new NotFoundException('Article not found');
     return article;

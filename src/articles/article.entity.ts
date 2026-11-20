@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import {User} from '../users/entities/user.entity';
+import {MAX_TITLE_LENGTH} from './article.constants';
 
 @Entity('articles')
 @Index('UQ_articles_slug', ['slug'], {unique: true})
@@ -21,7 +22,7 @@ export class Article {
   @Column({type: 'varchar', length: 255})
   slug!: string;
 
-  @Column({type: 'varchar', length: 255})
+  @Column({type: 'varchar', length: MAX_TITLE_LENGTH})
   title!: string;
 
   @Column({type: 'text'})
