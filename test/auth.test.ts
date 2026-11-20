@@ -12,7 +12,7 @@ import {createClient} from 'redis';
 import request, {Response} from 'supertest';
 import {DataSource, Repository} from 'typeorm';
 import type {User} from '../src/users/entities/user.entity';
-import {configureTestServices} from './support/services';
+import {configureTestServices, truncateTestFixtures} from './support/services';
 
 interface UserView {
   email: string;
@@ -135,17 +135,6 @@ describe(
         .send({user: fields});
     }
 
-    async function truncateUserFixtures(): Promise<void> {
-      if (!database?.isInitialized) return;
-      // Revalidate the explicit service targets immediately before destructive SQL.
-      const {databaseUrl} = configureTestServices();
-      assert.equal(database.options.type, 'postgres');
-      assert.equal((database.options as {url?: string}).url, databaseUrl);
-      await database.query(
-        'TRUNCATE TABLE public.article_favorites, public.articles, public.attachments, public.follows, public.users',
-      );
-    }
-
     before(
       async () => {
         const services = configureTestServices();
@@ -180,7 +169,7 @@ describe(
       {timeout: 30000},
     );
 
-    beforeEach(truncateUserFixtures);
+    beforeEach(() => truncateTestFixtures(database));
 
     afterEach(async () => {
       try {
@@ -189,7 +178,7 @@ describe(
         }
       } finally {
         keysCreatedByThisSuite.clear();
-        await truncateUserFixtures();
+        await truncateTestFixtures(database);
       }
     });
 

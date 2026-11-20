@@ -1,13 +1,12 @@
 # NestJS RealWorld
 
-Backend học tập theo [hướng dẫn NestJS của Sun*](https://github.com/framgia/Training-Guideline/blob/master/Nodejs/tutorial.md), triển khai theo [kế hoạch 6 pull](docs/pull-plan.md). [Pull 3](https://github.com/Vainnmilsecops/nestjs-realworld/pull/30) bổ sung cập nhật tài khoản, hồ sơ, follow/unfollow và ảnh đại diện.
+Backend học tập theo [hướng dẫn NestJS của Sun*](https://github.com/framgia/Training-Guideline/blob/master/Nodejs/tutorial.md), triển khai theo [kế hoạch 6 pull](docs/pull-plan.md).
 
 ## Chạy ứng dụng
 
 Cần Node.js 22 trở lên, npm và Docker Compose:
 
 ```sh
-git switch feature/03-users-avatar-attachments
 npm ci
 npm run setup
 docker compose -p realworld-training up -d --wait
@@ -47,6 +46,12 @@ Validation envelope trả `422`; token sai/hết hạn/đã thu hồi hoặc sai
 - `POST /api/profiles/:username/follow` và `DELETE /api/profiles/:username/follow` cần token và trả hồ sơ với trạng thái `following` sau thao tác.
 - Để upload, gửi `PUT /api/user` dạng `multipart/form-data` với trường file `avatar`. Có thể gửi kèm trường text `user` chứa JSON, ví dụ `{"bio":"Tôi viết hướng dẫn."}`. API nhận JPEG, PNG hoặc WebP tối đa 2 MiB.
 - Sau khi upload, `user.image` là đường dẫn `/api/attachments/<uuid>`. Chủ tài khoản gửi token khi tải ảnh qua đường dẫn này. Hồ sơ trả ảnh upload cho chính chủ và trả `image: null` cho khách hoặc tài khoản khác. URL ảnh HTTP(S) bên ngoài vẫn hiển thị trong hồ sơ công khai. File lưu trong `.local/uploads` theo mặc định hoặc theo `AVATAR_UPLOAD_DIR`.
+
+## Bình luận bài viết
+
+- `POST /api/articles/:slug/comments` cần đăng nhập. Gửi `{"comment":{"body":"Mình đã chạy thử ví dụ trong bài."}}`. API trả `201` cùng bình luận vừa tạo trong trường `comment`.
+- `GET /api/articles/:slug/comments` trả mảng `comments`, mới nhất trước. Khách có thể đọc. Khi gửi token, trường `author.following` cho biết người xem có theo dõi tác giả bình luận hay không.
+- `DELETE /api/articles/:slug/comments/:id` dùng ID số từ kết quả tạo bình luận. Tác giả bình luận xóa thành công nhận `204`. Tài khoản khác nhận `403`. Nếu bình luận không thuộc bài viết trong URL, API trả `404`.
 
 ## Cấu hình
 
@@ -89,7 +94,7 @@ macOS/Linux:
 TEST_DATABASE_URL='postgresql://realworld:realworld@127.0.0.1:5433/realworld_test' TEST_REDIS_URL='redis://127.0.0.1:6380/1' npm test
 ```
 
-Suite tự chạy migration trên database test. Kiểm thử auth truncate riêng `public.users` trước/sau mỗi test và chỉ xóa các blacklist key do suite tạo; không flush Redis hoặc xóa dữ liệu ngoài phạm vi đó.
+Các bộ test HTTP chạy migration trên database test và dọn dữ liệu người dùng, bài viết, bình luận cùng các bảng liên quan trước và sau mỗi ca kiểm thử. Bộ test xác thực chỉ xóa các khóa Redis mà nó tạo.
 
 ## Tham khảo
 

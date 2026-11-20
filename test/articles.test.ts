@@ -6,7 +6,7 @@ import type {INestApplication} from '@nestjs/common';
 import {Test} from '@nestjs/testing';
 import request from 'supertest';
 import {DataSource} from 'typeorm';
-import {configureTestServices} from './support/services';
+import {configureTestServices, truncateTestFixtures} from './support/services';
 
 const articlePath = '/api/articles';
 const sampleArticle = {
@@ -52,7 +52,6 @@ function summary(article: ArticleView): Omit<ArticleView, 'body'> {
 describe('Articles with PostgreSQL and Redis', {concurrency: false}, () => {
   let app: INestApplication | undefined;
   let database: DataSource | undefined;
-  let expectedDatabaseUrl: string;
 
   function api() {
     assert.ok(app);
@@ -86,18 +85,9 @@ describe('Articles with PostgreSQL and Redis', {concurrency: false}, () => {
     return response.body.article as ArticleView;
   }
 
-  async function truncateFixtures(): Promise<void> {
-    if (!database?.isInitialized) return;
-    assert.equal(database.options.type, 'postgres');
-    assert.equal((database.options as {url?: string}).url, expectedDatabaseUrl);
-    await database.query(
-      'TRUNCATE TABLE public.article_favorites, public.articles, public.attachments, public.follows, public.users',
-    );
-  }
-
   before(
     async () => {
-      expectedDatabaseUrl = configureTestServices().databaseUrl;
+      configureTestServices();
       const {AppModule} = await import('../src/app.module');
       const {configureApplication} =
         await import('../src/bootstrap/configure-application');
@@ -106,16 +96,15 @@ describe('Articles with PostgreSQL and Redis', {concurrency: false}, () => {
       }).compile();
       app = module.createNestApplication();
       configureApplication(app);
-      const connection = app.get<DataSource>(DataSource);
-      database = connection;
-      await connection.runMigrations();
+      database = app.get<DataSource>(DataSource);
+      await database.runMigrations();
       await app.init();
     },
     {timeout: 30000},
   );
 
-  beforeEach(truncateFixtures);
-  afterEach(truncateFixtures);
+  beforeEach(() => truncateTestFixtures(database));
+  afterEach(() => truncateTestFixtures(database));
   after(async () => {
     if (app) await app.close();
   });
