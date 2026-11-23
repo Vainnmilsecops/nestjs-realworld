@@ -4,11 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {Any, EntityManager, Repository} from 'typeorm';
+import {EntityManager, Repository} from 'typeorm';
 import {Article} from '../articles/article.entity';
-import {Follow} from '../users/entities/follow.entity';
 import {User} from '../users/entities/user.entity';
-import {profileImage} from '../users/profile-image';
+import {followedAuthorIds, toProfile} from '../users/profile';
 import {Comment} from './comment.entity';
 import {
   CommentDto,
@@ -29,7 +28,7 @@ export class CommentsService {
     author: User,
   ): Promise<CommentResponseDto> {
     return this.comments.manager.transaction(async (manager) => {
-      const article = await this.findArticle(slug, manager, true);
+      const article = await this.findArticle(slug, manager);
       const comments = manager.getRepository(Comment);
       const comment = await comments.save(
         comments.create({
@@ -58,20 +57,10 @@ export class CommentsService {
       },
       order: {createdAt: 'DESC', id: 'DESC'},
     });
-    const follows =
-      viewerId === undefined || comments.length === 0
-        ? []
-        : await this.comments.manager.getRepository(Follow).find({
-            where: {
-              followerId: viewerId,
-              followingId: Any([
-                ...new Set(comments.map((comment) => comment.authorId)),
-              ]),
-            },
-            select: {followingId: true},
-          });
-    const followedAuthors = new Set(
-      follows.map((follow) => follow.followingId),
+    const followedAuthors = await followedAuthorIds(
+      this.comments.manager,
+      comments.map((comment) => comment.authorId),
+      viewerId,
     );
     return {
       comments: comments.map((comment) =>
@@ -85,31 +74,31 @@ export class CommentsService {
   }
 
   async remove(slug: string, id: number, authorId: string): Promise<void> {
-    await this.comments.manager.transaction(async (manager) => {
-      const article = await this.findArticle(slug, manager, true);
-      const comments = manager.getRepository(Comment);
-      const comment = await comments.findOne({
-        where: {id, articleId: article.id},
-        lock: {mode: 'pessimistic_write'},
-      });
-      if (!comment) throw new NotFoundException('Comment not found');
-      if (comment.authorId !== authorId) {
-        throw new ForbiddenException('Only the comment author can delete it');
-      }
-      await comments.delete({id, articleId: article.id, authorId});
+    const article = await this.findArticle(slug);
+    const comment = await this.comments.findOne({
+      where: {id, articleId: article.id},
+      select: {authorId: true},
     });
+    if (!comment) throw new NotFoundException('Comment not found');
+    if (comment.authorId !== authorId) {
+      throw new ForbiddenException('Only the comment author can delete it');
+    }
+
+    const deleted = await this.comments.delete({id});
+    if (!deleted.affected) throw new NotFoundException('Comment not found');
   }
 
   private async findArticle(
     slug: string,
-    manager: EntityManager = this.comments.manager,
-    lock = false,
+    manager?: EntityManager,
   ): Promise<Article> {
-    const article = await manager.getRepository(Article).findOne({
-      where: {slug},
-      select: {id: true},
-      lock: lock ? {mode: 'pessimistic_read'} : undefined,
-    });
+    const article = await (manager ?? this.comments.manager)
+      .getRepository(Article)
+      .findOne({
+        where: {slug},
+        select: {id: true},
+        lock: manager ? {mode: 'pessimistic_read'} : undefined,
+      });
     if (!article) throw new NotFoundException('Article not found');
     return article;
   }
@@ -124,12 +113,7 @@ export class CommentsService {
       body: comment.body,
       createdAt: comment.createdAt.toISOString(),
       updatedAt: comment.updatedAt.toISOString(),
-      author: {
-        username: comment.author.username,
-        bio: comment.author.bio,
-        image: profileImage(comment.author, viewerId),
-        following,
-      },
+      author: toProfile(comment.author, following, viewerId),
     };
   }
 }

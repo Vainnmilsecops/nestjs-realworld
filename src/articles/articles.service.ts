@@ -5,10 +5,10 @@ import {
 } from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {randomUUID} from 'node:crypto';
-import {EntityManager, In, Repository, SelectQueryBuilder} from 'typeorm';
+import {EntityManager, Repository, SelectQueryBuilder} from 'typeorm';
 import {Follow} from '../users/entities/follow.entity';
 import {User} from '../users/entities/user.entity';
-import {profileImage} from '../users/profile-image';
+import {followedAuthorIds, toProfile} from '../users/profile';
 import {Article} from './article.entity';
 import {ArticleFavorite} from './article-favorite.entity';
 import {
@@ -281,14 +281,12 @@ export class ArticlesService {
     if (articles.length === 0) {
       return {followedAuthorIds: new Set(), favorites: new Map()};
     }
-    const authorIds = [...new Set(articles.map((article) => article.authorId))];
-    const [follows, favorites] = await Promise.all([
-      viewerId === undefined
-        ? []
-        : manager.getRepository(Follow).find({
-            where: {followerId: viewerId, followingId: In(authorIds)},
-            select: {followingId: true},
-          }),
+    const [followedAuthors, favorites] = await Promise.all([
+      followedAuthorIds(
+        manager,
+        articles.map((article) => article.authorId),
+        viewerId,
+      ),
       manager
         .getRepository(ArticleFavorite)
         .createQueryBuilder('favorite')
@@ -306,11 +304,8 @@ export class ArticlesService {
           favorited: boolean | null;
         }>(),
     ]);
-    const followedAuthorIds = new Set(
-      follows.map((follow) => follow.followingId),
-    );
     return {
-      followedAuthorIds,
+      followedAuthorIds: followedAuthors,
       favorites: new Map(
         favorites.map((favorite) => [
           favorite.articleId,
@@ -338,12 +333,11 @@ export class ArticlesService {
       updatedAt: article.updatedAt.toISOString(),
       favorited: favorite?.favorited ?? false,
       favoritesCount: favorite?.count ?? 0,
-      author: {
-        username: article.author.username,
-        bio: article.author.bio,
-        image: profileImage(article.author, viewerId),
-        following: stats.followedAuthorIds.has(article.authorId),
-      },
+      author: toProfile(
+        article.author,
+        stats.followedAuthorIds.has(article.authorId),
+        viewerId,
+      ),
     };
   }
 

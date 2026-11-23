@@ -202,6 +202,23 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
     });
   });
 
+  it('deletes a comment only once when two requests overlap', async () => {
+    const writer = await register();
+    const slug = await publish(writer);
+    const created = await comment(slug, writer);
+    const path = `${commentsPath(slug)}/${created.id}`;
+    const authorization = `Token ${writer.token}`;
+
+    const responses = await Promise.all([
+      api().delete(path).set('Authorization', authorization),
+      api().delete(path).set('Authorization', authorization),
+    ]);
+
+    assert.deepEqual(responses.map(({status}) => status).sort(), [204, 404]);
+    const listed = await api().get(commentsPath(slug)).expect(200);
+    assert.deepEqual(listed.body, {comments: []});
+  });
+
   it('requires credentials for creation and rejects invalid tokens on public reads', async () => {
     const writer = await register();
     const slug = await publish(writer);
