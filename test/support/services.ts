@@ -1,4 +1,6 @@
+import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
+import type {DataSource} from 'typeorm';
 
 const generatedSecret = randomBytes(48).toString('hex');
 
@@ -52,4 +54,16 @@ export function configureTestServices() {
     AUTH_RATE_LIMIT: '1000',
   });
   return {databaseUrl, redisUrl, jwtSecret};
+}
+
+export async function truncateTestFixtures(
+  database: DataSource | undefined,
+): Promise<void> {
+  if (!database?.isInitialized) return;
+  const {databaseUrl} = configureTestServices();
+  assert.equal(database.options.type, 'postgres');
+  assert.equal((database.options as {url?: string}).url, databaseUrl);
+  await database.query(
+    'TRUNCATE TABLE public.comments, public.article_favorites, public.articles, public.attachments, public.follows, public.users',
+  );
 }

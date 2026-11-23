@@ -8,6 +8,7 @@ import {PreferredLanguageResolver} from './i18n/preferred-language.resolver';
 import {DatabaseModule} from './database/database.module';
 import {AuthModule} from './auth/auth.module';
 import {ArticlesModule} from './articles/articles.module';
+import {CommentsModule} from './comments/comments.module';
 import {UsersModule} from './users/users.module';
 
 @Module({
@@ -27,6 +28,7 @@ import {UsersModule} from './users/users.module';
     AuthModule,
     UsersModule,
     ArticlesModule,
+    CommentsModule,
   ],
 })
 export class AppModule {}

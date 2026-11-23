@@ -7,7 +7,7 @@ import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 import {Follow} from './entities/follow.entity';
 import {User} from './entities/user.entity';
-import {profileImage} from './profile-image';
+import {toProfile} from './profile';
 import {ProfileResponseDto} from './profiles.dto';
 
 @Injectable()
@@ -28,7 +28,7 @@ export class ProfilesService {
         followerId: viewerId,
         followingId: user.id,
       }));
-    return this.profileResponse(user, following, viewerId);
+    return {profile: toProfile(user, following, viewerId)};
   }
 
   async follow(
@@ -45,7 +45,7 @@ export class ProfilesService {
       .values({followerId: viewerId, followingId: user.id})
       .orIgnore()
       .execute();
-    return this.profileResponse(user, true, viewerId);
+    return {profile: toProfile(user, true, viewerId)};
   }
 
   async unfollow(
@@ -57,7 +57,7 @@ export class ProfilesService {
       throw new UnprocessableEntityException('Cannot unfollow yourself');
     }
     await this.follows.delete({followerId: viewerId, followingId: user.id});
-    return this.profileResponse(user, false, viewerId);
+    return {profile: toProfile(user, false, viewerId)};
   }
 
   private async findProfile(username: string): Promise<User> {
@@ -67,20 +67,5 @@ export class ProfilesService {
     });
     if (!user) throw new NotFoundException('Profile not found');
     return user;
-  }
-
-  private profileResponse(
-    user: User,
-    following: boolean,
-    viewerId?: string,
-  ): ProfileResponseDto {
-    return {
-      profile: {
-        username: user.username,
-        bio: user.bio,
-        image: profileImage(user, viewerId),
-        following,
-      },
-    };
   }
 }

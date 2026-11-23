@@ -40,12 +40,12 @@ Nhánh dự kiến: `feature/04-articles`.
 - Danh sách có phân trang, bộ lọc và feed từ người đang theo dõi.
 - Favorite/unfavorite, validation, phân quyền và response theo RealWorld.
 
-## Pull 5 — Comments · kế hoạch
+## Pull 5 — Bình luận bài viết
 
-Nhánh dự kiến: `feature/05-comments`.
+Nhánh `feature/05-comments` dựa trên nhánh Articles của [Pull 4](https://github.com/Vainnmilsecops/nestjs-realworld/pull/32).
 
-- Thêm, xem danh sách và xóa bình luận trong bài viết; không có cập nhật bình luận.
-- Kiểm tra bài viết tồn tại và quyền xóa của tác giả bình luận.
+- Người đã đăng nhập có thể bình luận vào bài viết. Mọi người có thể xem danh sách bình luận.
+- Chỉ tác giả bình luận được xóa. API kiểm tra bình luận thuộc đúng bài viết trong URL.
 
 ## Pull 6 — E2E · kế hoạch
 
