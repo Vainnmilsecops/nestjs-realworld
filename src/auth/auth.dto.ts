@@ -1,4 +1,9 @@
-import {ApiProperty, ApiPropertyOptional, PartialType} from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  PartialType,
+  PickType,
+} from '@nestjs/swagger';
 import {Transform, Type} from 'class-transformer';
 import {
   IsDefined,
@@ -11,25 +16,30 @@ import {
   Matches,
   ValidateNested,
 } from 'class-validator';
+import {EMAIL_MAX_LENGTH, USERNAME_MAX_LENGTH} from '../users/user.constants';
 
 function normalizeEmail({value}: {value: unknown}): unknown {
   return typeof value === 'string' ? value.trim().toLowerCase() : value;
 }
 
 export class RegisterUserDto {
-  @ApiProperty({example: 'trainee_01', minLength: 3, maxLength: 50})
+  @ApiProperty({
+    example: 'trainee_01',
+    minLength: 3,
+    maxLength: USERNAME_MAX_LENGTH,
+  })
   @Transform(({value}: {value: unknown}) =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
-  @Length(3, 50)
+  @Length(3, USERNAME_MAX_LENGTH)
   @Matches(/^[a-zA-Z0-9_-]+$/)
   username!: string;
 
-  @ApiProperty({example: 'trainee@example.com', maxLength: 254})
+  @ApiProperty({example: 'trainee@example.com', maxLength: EMAIL_MAX_LENGTH})
   @Transform(normalizeEmail)
   @IsEmail()
-  @Length(3, 254)
+  @Length(3, EMAIL_MAX_LENGTH)
   email!: string;
 
   @ApiProperty({
@@ -52,23 +62,10 @@ export class RegisterUserRequestDto {
   user!: RegisterUserDto;
 }
 
-export class LoginUserDto {
-  @ApiProperty({example: 'trainee@example.com', maxLength: 254})
-  @Transform(normalizeEmail)
-  @IsEmail()
-  @Length(3, 254)
-  email!: string;
-
-  @ApiProperty({
-    example: 'training-password',
-    minLength: 8,
-    maxLength: 128,
-    writeOnly: true,
-  })
-  @IsString()
-  @Length(8, 128)
-  password!: string;
-}
+export class LoginUserDto extends PickType(RegisterUserDto, [
+  'email',
+  'password',
+] as const) {}
 
 export class LoginUserRequestDto {
   @ApiProperty({type: LoginUserDto})

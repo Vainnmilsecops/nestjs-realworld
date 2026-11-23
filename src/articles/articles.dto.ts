@@ -1,3 +1,4 @@
+import {applyDecorators} from '@nestjs/common';
 import {
   ApiProperty,
   ApiPropertyOptional,
@@ -21,8 +22,9 @@ import {
   ValidateNested,
 } from 'class-validator';
 import {ProfileDto} from '../users/profiles.dto';
+import {USERNAME_MAX_LENGTH} from '../users/user.constants';
+import {MAX_TITLE_LENGTH} from './article.constants';
 
-const MAX_TITLE_LENGTH = 255;
 const MAX_TAG_LENGTH = 50;
 const MAX_TAG_COUNT = 20;
 const DEFAULT_LIMIT = 20;
@@ -37,6 +39,21 @@ function parseQueryInteger({value}: {value: unknown}): unknown {
   return typeof value === 'string' && /^\d+$/.test(value)
     ? Number(value)
     : value;
+}
+
+function OptionalStringFilter(
+  maxLength: number,
+  example: string,
+): PropertyDecorator {
+  return applyDecorators(
+    ApiPropertyOptional({type: String, example, maxLength}),
+    ValidateIf((_object, value: unknown) => value !== undefined),
+    Transform(({value}: {value: unknown}) => trimString(value)),
+    IsString(),
+    Matches(/\S/),
+    MaxLength(maxLength),
+    NotContains('\u0000'),
+  );
 }
 
 export class ArticleInputDto {
@@ -129,31 +146,13 @@ export class PaginationQueryDto {
 }
 
 export class ArticleQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({example: 'nestjs', maxLength: MAX_TAG_LENGTH})
-  @ValidateIf((_object, value: unknown) => value !== undefined)
-  @Transform(({value}: {value: unknown}) => trimString(value))
-  @IsString()
-  @Matches(/\S/)
-  @MaxLength(MAX_TAG_LENGTH)
-  @NotContains('\u0000')
+  @OptionalStringFilter(MAX_TAG_LENGTH, 'nestjs')
   tag?: string;
 
-  @ApiPropertyOptional({example: 'trainee_01', maxLength: 50})
-  @ValidateIf((_object, value: unknown) => value !== undefined)
-  @Transform(({value}: {value: unknown}) => trimString(value))
-  @IsString()
-  @Matches(/\S/)
-  @MaxLength(50)
-  @NotContains('\u0000')
+  @OptionalStringFilter(USERNAME_MAX_LENGTH, 'trainee_01')
   author?: string;
 
-  @ApiPropertyOptional({example: 'trainee_01', maxLength: 50})
-  @ValidateIf((_object, value: unknown) => value !== undefined)
-  @Transform(({value}: {value: unknown}) => trimString(value))
-  @IsString()
-  @Matches(/\S/)
-  @MaxLength(50)
-  @NotContains('\u0000')
+  @OptionalStringFilter(USERNAME_MAX_LENGTH, 'trainee_01')
   favorited?: string;
 }
 
