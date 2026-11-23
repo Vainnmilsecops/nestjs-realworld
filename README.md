@@ -94,7 +94,11 @@ macOS/Linux:
 TEST_DATABASE_URL='postgresql://realworld:realworld@127.0.0.1:5433/realworld_test' TEST_REDIS_URL='redis://127.0.0.1:6380/1' npm test
 ```
 
-Các bộ test HTTP chạy migration trên database test và dọn dữ liệu người dùng, bài viết, bình luận cùng các bảng liên quan trước và sau mỗi ca kiểm thử. Bộ test xác thực chỉ xóa các khóa Redis mà nó tạo.
+Các bộ test HTTP chạy migration trên database test và truncate các bảng fixture trước và sau mỗi ca. Những ca logout chỉ dọn khóa Redis do chính test tạo.
+
+Chạy riêng Pull 6 với `npm run test:e2e` sau khi đặt hai biến test ở trên. Bộ E2E dùng NestJS, PostgreSQL và Redis thật. Mỗi ca tạo tài khoản và bài viết mẫu qua HTTP. Ca xuyên chức năng đi từ đăng nhập, theo dõi tác giả và mở feed tới thêm, đọc và xóa bình luận.
+
+Lệnh này in báo cáo từ source map TypeScript và kiểm tra ngưỡng 100% branch coverage riêng cho `CommentsController`. Các ca đọc có và không có token đi qua cả hai nhánh của `viewer?.id`. `npm test` chạy bộ E2E cùng các test khác trong CI.
 
 ## Tham khảo
 

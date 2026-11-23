@@ -47,13 +47,13 @@ Nhánh `feature/05-comments` dựa trên nhánh Articles của [Pull 4](https://
 - Người đã đăng nhập có thể bình luận vào bài viết. Mọi người có thể xem danh sách bình luận.
 - Chỉ tác giả bình luận được xóa. API kiểm tra bình luận thuộc đúng bài viết trong URL.
 
-## Pull 6 — E2E · kế hoạch
+## Pull 6 — E2E
 
-Nhánh dự kiến: `test/06-e2e`.
+Nhánh `test/06-e2e` dựa trên [Pull 5 #33](https://github.com/Vainnmilsecops/nestjs-realworld/pull/33).
 
-- Kiểm thử tích hợp các luồng nghiệp vụ, có ít nhất một bộ C2C cho một controller.
-- Dùng database test riêng; tạo fixture/fake data trước mỗi test và truncate sau mỗi test.
-- Bao phủ thành công, validation, xác thực, phân quyền và tài nguyên không tồn tại.
+- Kiểm thử qua HTTP cho cả ba route của `CommentsController`, gồm hai nhánh đọc bình luận có và không có người dùng đăng nhập.
+- Tạo fixture cho từng ca trên PostgreSQL và Redis dành riêng cho test. Truncate dữ liệu PostgreSQL sau mỗi ca.
+- Kiểm tra thêm, đọc và xóa bình luận trong luồng đăng nhập, theo dõi và xem feed. Bao phủ thêm validation, token đã logout, quyền xóa và tài nguyên không tồn tại.
 
 ## Quy tắc làm việc
 
