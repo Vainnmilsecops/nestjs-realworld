@@ -164,6 +164,47 @@ describe('CommentsController E2E', {concurrency: false}, () => {
     assert.deepEqual(listed.body, {comments: [created]});
   });
 
+  it('lets a signed-in reader follow a writer, find their article and join the discussion', async () => {
+    const login = await api()
+      .post('/api/users/login')
+      .send({user: {email: watcher.email, password}})
+      .expect(200);
+    const reader = login.body.user as TestUser;
+    assert.equal(reader.username, watcher.username);
+    const authorization = `Token ${reader.token}`;
+
+    const emptyFeed = await api()
+      .get('/api/articles/feed')
+      .set('Authorization', authorization)
+      .expect(200);
+    assert.deepEqual(emptyFeed.body, {articles: [], articlesCount: 0});
+
+    await api()
+      .post(`/api/profiles/${articleWriter.username}/follow`)
+      .set('Authorization', authorization)
+      .expect(200);
+    const feed = await api()
+      .get('/api/articles/feed')
+      .set('Authorization', authorization)
+      .expect(200);
+    assert.equal(feed.body.articlesCount, 1);
+    const [article] = feed.body.articles;
+    assert.equal(article.slug, slug);
+    assert.equal(article.author.following, true);
+
+    const path = commentsPath(article.slug);
+    const created = await comment(article.slug, reader);
+    assert.equal(created.author.username, watcher.username);
+    assert.deepEqual((await api().get(path).expect(200)).body, {
+      comments: [created],
+    });
+    await api()
+      .delete(`${path}/${created.id}`)
+      .set('Authorization', authorization)
+      .expect(204);
+    assert.deepEqual((await api().get(path).expect(200)).body, {comments: []});
+  });
+
   it('lists only the requested article comments, newest first with a stable ID order', async () => {
     assert.ok(database);
     const otherSlug = await publish(articleWriter);
