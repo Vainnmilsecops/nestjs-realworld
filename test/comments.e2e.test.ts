@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {after, afterEach, before, beforeEach, describe, it} from 'node:test';
 import type {INestApplication} from '@nestjs/common';
+import {JwtService} from '@nestjs/jwt';
 import {Test} from '@nestjs/testing';
+import {createClient} from 'redis';
 import request from 'supertest';
 import {DataSource} from 'typeorm';
 import {configureTestServices, truncateTestFixtures} from './support/services';
 
 interface TestUser {
+  email: string;
   username: string;
   token: string;
 }
@@ -30,9 +33,17 @@ function commentsPath(slug: string): string {
   return `/api/articles/${encodeURIComponent(slug)}/comments`;
 }
 
-describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
+const password = 'Training-password-123!';
+
+describe('CommentsController E2E', {concurrency: false}, () => {
   let app: INestApplication | undefined;
   let database: DataSource | undefined;
+  let redis: ReturnType<typeof createClient> | undefined;
+  let articleWriter: TestUser;
+  let commenter: TestUser;
+  let watcher: TestUser;
+  let slug: string;
+  const revokedKeys = new Set<string>();
 
   function api() {
     assert.ok(app);
@@ -47,7 +58,7 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
         user: {
           username: `reader_${suffix}`,
           email: `${suffix}@example.test`,
-          password: 'Training-password-123!',
+          password,
         },
       })
       .expect(201);
@@ -85,7 +96,7 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
 
   before(
     async () => {
-      configureTestServices();
+      const services = configureTestServices();
       const {AppModule} = await import('../src/app.module');
       const {configureApplication} =
         await import('../src/bootstrap/configure-application');
@@ -97,21 +108,43 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
       database = app.get<DataSource>(DataSource);
       await database.runMigrations();
       await app.init();
+      redis = createClient({
+        url: services.redisUrl,
+        socket: {connectTimeout: 2000, reconnectStrategy: false},
+        disableOfflineQueue: true,
+      });
+      redis.on('error', () => {});
+      await redis.connect();
     },
     {timeout: 30000},
   );
 
-  beforeEach(() => truncateTestFixtures(database));
-  afterEach(() => truncateTestFixtures(database));
+  beforeEach(async () => {
+    await truncateTestFixtures(database);
+    articleWriter = await register();
+    commenter = await register();
+    watcher = await register();
+    slug = await publish(articleWriter);
+  });
+  afterEach(async () => {
+    try {
+      if (redis?.isReady && revokedKeys.size) await redis.del([...revokedKeys]);
+    } finally {
+      revokedKeys.clear();
+      await truncateTestFixtures(database);
+    }
+  });
   after(async () => {
-    if (app) await app.close();
+    try {
+      if (app) await app.close();
+    } finally {
+      if (redis?.isOpen) await redis.close();
+    }
   });
 
   it('creates a comment with the original body and a sanitized public author', async () => {
-    const writer = await register();
-    const slug = await publish(writer);
     const body = '  The first point.\n\nThe second point.  ';
-    const created = await comment(slug, writer, body);
+    const created = await comment(slug, commenter, body);
     assert.ok(Number.isInteger(created.id) && created.id > 0);
     assert.ok(Number.isFinite(Date.parse(created.createdAt)));
     assert.ok(Number.isFinite(Date.parse(created.updatedAt)));
@@ -121,7 +154,7 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
       createdAt: created.createdAt,
       updatedAt: created.updatedAt,
       author: {
-        username: writer.username,
+        username: commenter.username,
         bio: null,
         image: null,
         following: false,
@@ -133,17 +166,15 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
 
   it('lists only the requested article comments, newest first with a stable ID order', async () => {
     assert.ok(database);
-    const writer = await register();
-    const slug = await publish(writer);
-    const otherSlug = await publish(writer);
-    const oldest = await comment(slug, writer, 'Oldest');
-    const newer = await comment(slug, writer, 'Newer');
+    const otherSlug = await publish(articleWriter);
+    const oldest = await comment(slug, commenter, 'Oldest');
+    const newer = await comment(slug, commenter, 'Newer');
     const newest = await comment(
       slug,
-      writer,
+      commenter,
       'Newest with the same timestamp',
     );
-    const unrelated = await comment(otherSlug, writer, 'Another article');
+    const unrelated = await comment(otherSlug, commenter, 'Another article');
     await database.query(
       'UPDATE public.comments SET created_at = $1 WHERE id = $2',
       ['2020-01-01T00:00:00.000Z', oldest.id],
@@ -159,7 +190,7 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
     );
     const other = await api().get(commentsPath(otherSlug)).expect(200);
     assert.deepEqual(other.body, {comments: [unrelated]});
-    const emptySlug = await publish(writer);
+    const emptySlug = await publish(articleWriter);
     assert.deepEqual(
       (await api().get(commentsPath(emptySlug)).expect(200)).body,
       {comments: []},
@@ -167,15 +198,11 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
   });
 
   it('allows only the comment author to delete and keeps deletion scoped to its article', async () => {
-    const articleAuthor = await register();
-    const commenter = await register();
-    const outsider = await register();
-    const slug = await publish(articleAuthor);
-    const otherSlug = await publish(articleAuthor);
+    const otherSlug = await publish(articleWriter);
     const created = await comment(slug, commenter);
     const path = `${commentsPath(slug)}/${created.id}`;
     await api().delete(path).expect(401);
-    for (const user of [articleAuthor, outsider]) {
+    for (const user of [articleWriter, watcher]) {
       await api()
         .delete(path)
         .set('Authorization', `Token ${user.token}`)
@@ -220,9 +247,8 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
   });
 
   it('requires credentials for creation and rejects invalid tokens on public reads', async () => {
-    const writer = await register();
-    const slug = await publish(writer);
     const path = commentsPath(slug);
+    const created = await comment(slug, commenter);
     const payload = {comment: {body: 'A valid comment'}};
     await api().post(path).send(payload).expect(401);
     await api()
@@ -232,15 +258,44 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
       .expect(401);
     await api().get(path).set('Authorization', 'Token invalid').expect(401);
     await api()
-      .delete(`${path}/1`)
+      .delete(`${path}/${created.id}`)
       .set('Authorization', 'Token invalid')
       .expect(401);
   });
 
+  it('rejects a logged-out session on create, authenticated list, and delete', async () => {
+    assert.ok(app);
+    const login = await api()
+      .post('/api/users/login')
+      .send({user: {email: commenter.email, password}})
+      .expect(200);
+    const token = login.body.user.token as string;
+    const session = {...commenter, token};
+    const created = await comment(slug, session);
+    const {jti} = app.get(JwtService).verify<{jti: string}>(token);
+    revokedKeys.add(`auth:revoked:${jti}`);
+    await api()
+      .post('/api/users/logout')
+      .set('Authorization', `Token ${token}`)
+      .expect(204);
+    const path = commentsPath(slug);
+    await api()
+      .post(path)
+      .set('Authorization', `Token ${token}`)
+      .send({comment: {body: 'A rejected comment'}})
+      .expect(401);
+    await api().get(path).set('Authorization', `Token ${token}`).expect(401);
+    await api()
+      .delete(`${path}/${created.id}`)
+      .set('Authorization', `Token ${token}`)
+      .expect(401);
+    assert.deepEqual((await api().get(path).expect(200)).body, {
+      comments: [created],
+    });
+  });
+
   it('rejects malformed comment envelopes and body values before writing', async () => {
     assert.ok(database);
-    const writer = await register();
-    const slug = await publish(writer);
     const invalid = [
       {},
       {comment: null},
@@ -259,7 +314,7 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
     for (const payload of invalid) {
       const response = await api()
         .post(commentsPath(slug))
-        .set('Authorization', `Token ${writer.token}`)
+        .set('Authorization', `Token ${commenter.token}`)
         .send(payload)
         .expect(422);
       assert.ok(Array.isArray(response.body.errors.body));
@@ -273,10 +328,8 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
   });
 
   it('distinguishes missing articles and comments from invalid numeric IDs', async () => {
-    const writer = await register();
-    const slug = await publish(writer);
     const missingPath = commentsPath('missing-article');
-    const authorization = `Token ${writer.token}`;
+    const authorization = `Token ${commenter.token}`;
     await api().get(missingPath).expect(404);
     await api()
       .post(missingPath)
@@ -302,9 +355,6 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
 
   it('resolves follow state while exposing a private avatar only to its owner', async () => {
     assert.ok(database);
-    const articleAuthor = await register();
-    const commenter = await register();
-    const slug = await publish(articleAuthor);
     const image = `/api/attachments/${randomUUID()}`;
     await database.query(
       'UPDATE public.users SET image = $1 WHERE username = $2',
@@ -314,7 +364,7 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
     assert.equal(created.author.image, image);
     await api()
       .post(`/api/profiles/${commenter.username}/follow`)
-      .set('Authorization', `Token ${articleAuthor.token}`)
+      .set('Authorization', `Token ${articleWriter.token}`)
       .expect(200);
     const path = commentsPath(slug);
     const guest = await api().get(path).expect(200);
@@ -326,7 +376,7 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
     });
     const follower = await api()
       .get(path)
-      .set('Authorization', `Token ${articleAuthor.token}`)
+      .set('Authorization', `Token ${articleWriter.token}`)
       .expect(200);
     assert.equal(follower.body.comments[0].author.image, null);
     assert.equal(follower.body.comments[0].author.following, true);
@@ -384,13 +434,10 @@ describe('Comments with PostgreSQL and Redis', {concurrency: false}, () => {
 
   it('removes the article comments when deleting their parent article', async () => {
     assert.ok(database);
-    const articleAuthor = await register();
-    const commenter = await register();
-    const slug = await publish(articleAuthor);
     await comment(slug, commenter);
     await api()
       .delete(`/api/articles/${encodeURIComponent(slug)}`)
-      .set('Authorization', `Token ${articleAuthor.token}`)
+      .set('Authorization', `Token ${articleWriter.token}`)
       .expect(204);
     await api().get(commentsPath(slug)).expect(404);
     assert.deepEqual(
